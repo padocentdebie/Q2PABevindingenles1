@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Q2les1PVBevindingen - Volledige Module</title>
+    <title>Module PV Bevindingen - Politieacademie</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
     <script type="module">
@@ -22,6 +22,16 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+
+        // --- LIVE TELLERS VOOR DE KLASSEN ---
+        const klassen = ['Delta', 'Echo', 'Foxtrot', 'Mike', 'Lima'];
+        klassen.forEach(klas => {
+            const q = query(collection(db, "casus_inzendingen"), where("klas", "==", klas));
+            onSnapshot(q, (snapshot) => {
+                const el = document.getElementById(`count-${klas}`);
+                if(el) el.innerText = snapshot.size;
+            });
+        });
 
         // --- WHITEBOARD LOGICA ---
         const whiteboardRef = collection(db, "whiteboard_items");
@@ -51,80 +61,90 @@
         window.checkTraining = () => {
             const inputs = document.querySelectorAll('.oefening-input');
             let correctCount = 0;
-            const verboden = ["werd", "worden", "is", "zijn", "was"];
+            const verboden = ["werd", "worden", "is", "zijn", "was", "door"];
             
             inputs.forEach(input => {
                 const val = input.value.toLowerCase();
                 const hasForbidden = verboden.some(v => val.includes(v));
-                if (val.length > 5 && !hasForbidden) {
-                    input.classList.add('border-green-500');
-                    input.classList.remove('border-yellow-400', 'border-red-500');
+                if (val.length > 8 && !hasForbidden) {
+                    input.className = "oefening-input w-full bg-blue-900 border-b-2 border-green-500 p-1 text-xs outline-none text-white";
                     correctCount++;
                 } else {
-                    input.classList.add('border-red-500');
-                    input.classList.remove('border-green-500');
+                    input.className = "oefening-input w-full bg-blue-950 border-b-2 border-red-500 p-1 text-xs outline-none text-white";
                 }
             });
             const fb = document.getElementById('trainingFeedback');
             fb.classList.remove('hidden');
-            fb.innerText = correctCount === 10 ? "✅ Uitstekend! Uw zinnen zijn nu actief en filmisch." : `⚠️ ${correctCount}/10 goed. Vermijd 'werd' of 'was' en gebruik de verleden tijd!`;
+            fb.innerText = correctCount === 10 ? "✅ Perfect! U bent klaar voor het PV." : `⚠️ ${correctCount}/10 actief. Vermijd hulpwerkwoorden!`;
         };
 
-        // --- CASUS & TELLERS ---
+        // --- CASUS INLEVEREN ---
         window.submitCasus = async () => {
             const naam = document.getElementById('naam').value.trim();
             const klas = document.getElementById('klas').value;
             const partners = document.getElementById('partnerInput').value.trim();
             const daa = document.getElementById('daaText').value.trim();
             const pv = document.getElementById('pvText').value.trim();
+            
             if(!naam || !daa || !pv) return alert("FOUT: Naam, DAA en PV zijn verplicht.");
-            await addDoc(collection(db, "casus_inzendingen"), { student: naam, partner: partners, klas, daa, pv, timestamp: serverTimestamp() });
-            alert("Inzending succesvol!"); location.reload();
+            
+            try {
+                await addDoc(collection(db, "casus_inzendingen"), { 
+                    student: naam, partner: partners, klas, daa, pv, timestamp: serverTimestamp() 
+                });
+                alert("Inzending succesvol verwerkt!");
+                document.getElementById('naam').value = "";
+                document.getElementById('daaText').value = "";
+                document.getElementById('pvText').value = "";
+            } catch (e) { alert("Fout bij opslaan."); }
         };
 
+        // --- FEEDBACK LADEN ---
         window.laadKlas = async (gekozenKlas) => {
             document.getElementById('currentKlas').innerText = gekozenKlas;
             const lijst = document.getElementById('feedbackLijst');
             lijst.innerHTML = "<p class='text-xs italic'>Laden...</p>";
-            const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
-            const snap = await getDocs(q);
-            let htmlContent = "";
-            snap.forEach(docSnap => {
-                const d = docSnap.data(); const id = docSnap.id;
-                const criteria = ["Positionering", "Veiligheid", "METHANE", "Strafbaar feit", "Partners", "Opsporingstaken"];
-                let fbHtml = "";
-                criteria.forEach((label, i) => {
-                    const chk = d[`feedback_${i}`] ? "checked" : "";
-                    fbHtml += `<label class="flex items-center p-1 cursor-pointer"><input type="checkbox" class="mr-2 h-3 w-3 accent-blue-900" ${chk} onchange="window.updateFeedback('${id}', ${i}, this.checked)"> ${label}</label>`;
+            
+            const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas), orderBy("timestamp", "desc"));
+            onSnapshot(q, (snapshot) => {
+                let html = "";
+                snapshot.forEach(docSnap => {
+                    const d = docSnap.data();
+                    const id = docSnap.id;
+                    const criteria = ["Positionering", "Veiligheid", "METHANE", "Strafbaar feit", "Partners", "Opsporingstaken"];
+                    let fbHtml = "";
+                    criteria.forEach((label, i) => {
+                        const chk = d[`feedback_${i}`] ? "checked" : "";
+                        fbHtml += `<label class="flex items-center p-1 cursor-pointer hover:bg-white rounded"><input type="checkbox" class="mr-2 h-3 w-3 accent-blue-900" ${chk} onchange="window.updateFeedback('${id}', ${i}, this.checked)"> ${label}</label>`;
+                    });
+                    html += `<div class="bg-white border-2 border-gray-100 p-6 mb-8 text-left shadow-sm rounded-sm">
+                        <div class="flex justify-between border-b pb-2 mb-4"><span class="text-[10px] font-black text-blue-900 uppercase">Auteur: ${d.student}</span><span class="text-[10px] italic text-gray-400">Partner(s): ${d.partner}</span></div>
+                        <div class="space-y-4 font-serif text-sm">
+                            <div><strong class="text-[9px] uppercase text-gray-400 block mb-1">DAA Analyse</strong><p class="text-gray-800 leading-relaxed">${d.daa}</p></div>
+                            <div><strong class="text-[9px] uppercase text-gray-400 block mb-1">PV van Bevindingen</strong><p class="text-gray-800 leading-relaxed border-t pt-2">${d.pv}</p></div>
+                        </div>
+                        <div class="bg-blue-50/50 p-4 mt-6 border border-blue-100 rounded text-[10px]">
+                            <p class="font-bold mb-2 uppercase text-blue-900 border-b pb-1">Peer Feedback:</p>
+                            <div class="grid grid-cols-2 gap-x-4">${fbHtml}</div>
+                        </div>
+                    </div>`;
                 });
-                htmlContent += `<div class="bg-white border-2 border-gray-100 p-6 mb-8 text-left shadow-sm">
-                    <div class="flex justify-between border-b pb-2 mb-4"><span class="text-[10px] font-bold text-blue-900 uppercase">${d.student}</span><span class="text-[10px] italic text-gray-400">${d.partner}</span></div>
-                    <div class="space-y-4 font-serif text-sm"><div><strong>DAA:</strong><p>${d.daa}</p></div><div><strong>PV:</strong><p class="border-t pt-2">${d.pv}</p></div></div>
-                    <div class="bg-blue-50/50 p-4 mt-6 border rounded text-[10px]"><p class="font-bold mb-2 uppercase text-blue-900">Peer Feedback Checklist:</p><div class="grid grid-cols-2 gap-2">${fbHtml}</div></div>
-                </div>`;
+                lijst.innerHTML = html || "<p class='text-xs font-bold text-gray-400'>Nog geen inzendingen.</p>";
             });
-            lijst.innerHTML = htmlContent || "<p class='text-xs font-bold uppercase text-gray-400'>Geen inzendingen gevonden.</p>";
         };
 
-        window.updateFeedback = async (id, i, val) => { await updateDoc(doc(db, "casus_inzendingen", id), { [`feedback_${i}`]: val }); };
-        
+        window.updateFeedback = async (id, i, val) => { 
+            await updateDoc(doc(db, "casus_inzendingen", id), { [`feedback_${i}`]: val }); 
+        };
+
         window.resetKlas = async () => { 
             const k = document.getElementById('currentKlas').innerText;
-            if(k === "-") return alert("Kies eerst een klas.");
-            if(confirm("Alle data van "+k+" definitief verwijderen?")) {
+            if(k === "-") return alert("Selecteer eerst een klas.");
+            if(confirm("Alle data van "+k+" definitief wissen?")) {
                 const q = query(collection(db, "casus_inzendingen"), where("klas", "==", k));
                 const snap = await getDocs(q);
                 snap.forEach(async d => await deleteDoc(doc(db, "casus_inzendingen", d.id)));
-                alert("Klas gereset."); location.reload();
-            }
-        };
-
-        window.onload = async () => {
-            const klassen = ['Delta', 'Echo', 'Foxtrot', 'Mike', 'Lima'];
-            for (const k of klassen) {
-                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", k));
-                const s = await getDocs(q);
-                document.getElementById(`count-${k}`).innerText = s.size;
+                alert("Klas gereset.");
             }
         };
     </script>
@@ -136,104 +156,116 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-gray-100 p-4 md:p-8 font-sans">
+<body class="bg-gray-100 p-4 md:p-8 font-sans text-gray-900">
     <div class="max-w-4xl mx-auto">
         
-        <section class="bg-white border-2 border-police p-6 mb-8 shadow-lg">
+        <header class="bg-slate-800 text-white p-6 mb-8 rounded shadow border-b-4 border-blue-500">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-xs font-bold uppercase tracking-widest mb-2 text-blue-300">Instructie Oefenmodule</h3>
+                    <ul class="text-[10px] space-y-1 list-disc list-inside text-gray-300 text-left">
+                        <li>Start met het <strong>Whiteboard</strong> (waarnemingen).</li>
+                        <li>Doorloop de <strong>Training</strong> voor actieve zinnen.</li>
+                        <li>Schrijf uw PV op basis van de casusbeelden.</li>
+                    </ul>
+                </div>
+                <div class="bg-slate-700/50 p-3 rounded border border-slate-600 text-left">
+                    <h3 class="text-[9px] font-black uppercase tracking-widest mb-2 text-yellow-400">Filmisch Schrijven Check:</h3>
+                    <div class="grid grid-cols-2 gap-2 text-[9px]">
+                        <div class="text-red-400 font-bold uppercase">Niet: "Werd gezien"</div>
+                        <div class="text-green-400 font-bold uppercase">Wel: "Ik zag"</div>
+                        <div class="text-red-400 font-bold uppercase">Niet: "Is gereden"</div>
+                        <div class="text-green-400 font-bold uppercase">Wel: "Hij reed"</div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <section class="bg-white border-2 border-police p-6 mb-8 shadow-lg rounded-sm">
             <h2 class="text-center text-[11px] font-black text-blue-900 uppercase tracking-widest mb-4">Whiteboard: Redenen van Wetenschap</h2>
+            <div class="grid grid-cols-2 gap-4 mb-6 text-left">
+                <div class="bg-blue-50 p-2 border-l-4 border-blue-900">
+                    <p class="text-[9px] font-bold text-blue-900 uppercase">Voorbeeld 1 (Zien):</p>
+                    <p class="text-[10px] italic text-gray-600">"Ik zag dat het achterlicht defect was."</p>
+                </div>
+                <div class="bg-blue-50 p-2 border-l-4 border-blue-900">
+                    <p class="text-[9px] font-bold text-blue-900 uppercase">Voorbeeld 2 (Horen):</p>
+                    <p class="text-[10px] italic text-gray-600">"Ik hoorde de bestuurder met dubbele tong spreken."</p>
+                </div>
+            </div>
             <div class="flex gap-2 mb-4">
-                <input type="text" id="whiteboardInput" placeholder="Typ hier een waarneming (zin)..." class="flex-1 border-b-2 p-2 text-sm outline-none focus:border-blue-900 bg-gray-50">
+                <input type="text" id="whiteboardInput" placeholder="Typ uw waarneming..." class="flex-1 border-b-2 p-2 text-sm outline-none focus:border-blue-900 bg-gray-50">
                 <button onclick="sendToWhiteboard()" class="police-blue text-white px-6 py-2 text-[10px] font-bold uppercase tracking-widest">Plaatsen</button>
             </div>
-            <div id="whiteboardDisplay" class="grid grid-cols-2 md:grid-cols-4 gap-2 min-h-[120px] p-2 bg-slate-50 shadow-inner max-h-64 overflow-y-auto"></div>
+            <div id="whiteboardDisplay" class="grid grid-cols-2 md:grid-cols-4 gap-2 min-h-[100px] p-2 bg-slate-50 shadow-inner max-h-64 overflow-y-auto"></div>
         </section>
 
-        <section class="bg-white p-8 border-b-4 border-police shadow-sm mb-8">
-             <h2 class="text-[10px] font-bold text-blue-900 uppercase underline mb-4 text-left">Bericht Operationeel Centrum</h2>
-             <p class="italic text-lg text-gray-700 font-serif mb-8 text-left">"Motorrijder gevallen op de kruising Vincent van Goghweg met de Westzijde, Zaandam. Ambulance is onderweg."</p>
+        <section class="bg-white p-8 border-b-4 border-police shadow-sm mb-8 text-left">
+             <h2 class="text-[10px] font-bold text-blue-900 uppercase underline mb-4 tracking-widest">Bericht Operationeel Centrum</h2>
+             <p class="italic text-lg text-gray-700 font-serif mb-8">"Motorrijder gevallen op de kruising Vincent van Goghweg met de Westzijde, Zaandam. Ambulance is onderweg."</p>
              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-6">
-                <div class="text-center"><img src="bord50.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold">Situatie: 50 km/h zone</p></div>
+                <div class="text-center"><img src="bord50.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold">50 km/h zone</p></div>
                 <div class="text-center"><img src="overzichtkruispunt.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold">Luchtfoto kruising</p></div>
-                <div class="text-center"><img src="kruispuntgooglemaps.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold">Zicht vanaf Westzijde</p></div>
+                <div class="text-center"><img src="kruispuntgooglemaps.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold">Zicht Westzijde</p></div>
              </div>
         </section>
 
-        <section class="bg-blue-900 text-white p-8 mb-12 shadow-lg border-l-8 border-yellow-400">
-            <h2 class="text-[11px] font-black uppercase tracking-widest mb-4 text-yellow-400 text-left">Training: Van Passief naar Filmisch Actief</h2>
-            <p class="text-[10px] mb-6 opacity-80 text-left italic">Schrijf in de <strong>verleden tijd</strong> en vermijd woorden als 'werd', 'was' of 'is'.</p>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">1. De afslag werd door de bestuurder gemist.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+        <section class="bg-blue-900 text-white p-8 mb-12 shadow-lg border-l-8 border-yellow-400 text-left">
+            <h2 class="text-[11px] font-black uppercase tracking-widest mb-4 text-yellow-400">Training: Actieve Verleden Tijd</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="space-y-4">
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">1. Afslag werd gemist door bestuurder.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">2. Bewijs was door hitte gebrand.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">3. Controle werd door hem verloren.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">4. Verdachte werd staande gehouden.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">5. Portier werd door mij geopend.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
                 </div>
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">2. Het bewijs was door de hitte gebrand.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
-                </div>
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">3. De controle werd door hem verloren.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
-                </div>
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">4. De verdachte werd door ons staande gehouden.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
-                </div>
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">5. Het portier werd door mij geopend.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
-                </div>
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">6. Er werd door de getuige luid geschreeuwd.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
-                </div>
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">7. De alcoholtest werd door de man geweigerd.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
-                </div>
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">8. Een mes werd in de struiken gevonden.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
-                </div>
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">9. De snelheid werd door ons gemeten op 80 km/h.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
-                </div>
-                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
-                    <p class="text-[9px] text-blue-200 uppercase mb-1">10. Het slachtoffer werd naar de ambulance begeleid.</p>
-                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                <div class="space-y-4">
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">6. Er werd door getuige geschreeuwd.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">7. Alcoholtest werd geweigerd.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">8. Mes werd in struiken gevonden.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">9. Snelheid werd door ons gemeten.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                    <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">10. Slachtoffer werd begeleid.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
                 </div>
             </div>
-            <div class="mt-8 flex justify-between items-center">
-                <button onclick="checkTraining()" class="bg-yellow-400 text-blue-900 px-6 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-white transition">Check Actieve Vorm</button>
-                <div id="trainingFeedback" class="text-[10px] font-bold text-yellow-400 hidden"></div>
-            </div>
+            <button onclick="checkTraining()" class="bg-yellow-400 text-blue-900 px-6 py-2 text-[10px] font-black uppercase hover:bg-white transition">Check Actieve Vorm</button>
+            <span id="trainingFeedback" class="ml-4 text-[10px] font-bold text-yellow-400 hidden"></span>
         </section>
 
         <section class="bg-white p-8 border border-gray-200 shadow-sm mb-12 text-left">
             <div class="grid grid-cols-2 gap-4 mb-4">
-                <div><label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Naam</label><input type="text" id="naam" class="w-full border p-2 text-sm bg-gray-50 outline-none focus:border-blue-900"></div>
-                <div><label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Klas</label>
-                    <select id="klas" class="w-full border p-2 text-sm bg-gray-50 outline-none">
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase">Naam</label><input type="text" id="naam" class="w-full border p-2 text-sm bg-gray-50 outline-none"></div>
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase">Klas</label>
+                    <select id="klas" class="w-full border p-2 text-sm bg-gray-50 outline-none font-bold">
                         <option>Delta</option><option>Echo</option><option>Foxtrot</option><option>Mike</option><option>Lima</option>
                     </select>
                 </div>
             </div>
             <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Partner(s) DAA</label>
             <input type="text" id="partnerInput" class="w-full border p-2 text-sm mb-4 border-l-4 border-blue-900 bg-blue-50 outline-none">
-            <textarea id="daaText" placeholder="1. DAA (Doel Aanpak Analyse)..." class="w-full border p-4 text-sm h-32 bg-gray-50 mb-4 outline-none focus:bg-white"></textarea>
-            <textarea id="pvText" placeholder="2. Proces-verbaal van Bevindingen (Schrijf Filmisch!)..." class="w-full border p-4 text-sm h-56 bg-gray-50 mb-4 outline-none focus:bg-white"></textarea>
-            <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-4 uppercase text-sm hover:bg-black transition shadow-md">Definitief Inleveren</button>
+            <textarea id="daaText" placeholder="DOEL AANPAK ANALYSE..." class="w-full border p-4 text-sm h-32 bg-gray-50 mb-4 outline-none focus:bg-white"></textarea>
+            <textarea id="pvText" placeholder="PROCES-VERBAAL VAN BEVINDINGEN (Schrijf Filmisch!)..." class="w-full border p-4 text-sm h-56 bg-gray-50 mb-4 outline-none focus:bg-white"></textarea>
+            <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-4 uppercase text-sm hover:bg-black transition">Inleveren Casus</button>
         </section>
 
         <section class="text-center pb-20 border-t pt-10">
             <h4 class="text-[10px] font-bold text-gray-400 uppercase mb-6 tracking-widest">Inzendingen per Klas (<span id="currentKlas">-</span>)</h4>
             <div class="flex flex-wrap justify-center gap-2 mb-10">
-                <button onclick="laadKlas('Delta')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Delta (<span id="count-Delta">0</span>)</button>
-                <button onclick="laadKlas('Echo')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Echo (<span id="count-Echo">0</span>)</button>
-                <button onclick="laadKlas('Foxtrot')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Foxtrot (<span id="count-Foxtrot">0</span>)</button>
-                <button onclick="laadKlas('Mike')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Mike (<span id="count-Mike">0</span>)</button>
-                <button onclick="laadKlas('Lima')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Lima (<span id="count-Lima">0</span>)</button>
+                <button onclick="laadKlas('Delta')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm min-w-[90px]">Delta (<span id="count-Delta">0</span>)</button>
+                <button onclick="laadKlas('Echo')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm min-w-[90px]">Echo (<span id="count-Echo">0</span>)</button>
+                <button onclick="laadKlas('Foxtrot')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm min-w-[90px]">Foxtrot (<span id="count-Foxtrot">0</span>)</button>
+                <button onclick="laadKlas('Mike')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm min-w-[90px]">Mike (<span id="count-Mike">0</span>)</button>
+                <button onclick="laadKlas('Lima')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm min-w-[90px]">Lima (<span id="count-Lima">0</span>)</button>
             </div>
             <div id="feedbackLijst" class="max-w-3xl mx-auto mb-10"></div>
             <button onclick="resetKlas()" class="text-[9px] font-bold text-red-400 border border-red-100 px-4 py-1 hover:bg-red-500 hover:text-white transition uppercase">⚠️ Reset Klas</button>

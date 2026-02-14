@@ -23,121 +23,134 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        async function wijsPartnerToe() {
-            const klas = document.getElementById('klas').value;
-            const eigenNaam = document.getElementById('naam').value.trim();
-            const partnerDisplay = document.getElementById('partnerDisplay');
-            
-            if(!eigenNaam) return alert("Voer eerst uw naam in.");
-
-            partnerDisplay.innerText = "Systeem doorzoeken...";
-            
-            try {
-                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", klas));
-                const snap = await getDocs(q);
-                let studenten = [];
-                
-                snap.forEach(docSnap => {
-                    const sNaam = docSnap.data().student;
-                    if(sNaam.toLowerCase() !== eigenNaam.toLowerCase()) {
-                        studenten.push(sNaam);
-                    }
-                });
-
-                if(studenten.length > 0) {
-                    const partner = studenten[Math.floor(Math.random() * studenten.length)];
-                    partnerDisplay.innerText = partner;
-                    document.getElementById('hiddenPartner').value = partner;
-                } else {
-                    partnerDisplay.innerText = "Geen andere studenten gevonden in " + klas;
-                    alert("Status: U bent momenteel de enige actieve student in deze klas. De partner-functie werkt zodra een tweede student inlogt/indient.");
-                }
-            } catch (e) { console.error(e); }
-        }
-
         async function submitCasus() {
             const naam = document.getElementById('naam').value.trim();
             const klas = document.getElementById('klas').value;
-            const partner = document.getElementById('hiddenPartner').value;
-            const daa = document.getElementById('daaText').value;
-            const pv = document.getElementById('pvText').value;
+            const partners = document.getElementById('partnerInput').value.trim();
+            const daa = document.getElementById('daaText').value.trim();
+            const pv = document.getElementById('pvText').value.trim();
             
-            if(!naam || !daa || !pv) return alert("Naam, DAA en PV zijn verplicht.");
+            if(!naam || !daa || !pv) return alert("FOUT: Naam, DAA en PV zijn verplichte velden.");
             
             try {
                 await addDoc(collection(db, "casus_inzendingen"), {
-                    student: naam, partner: partner || "Nog geen partner", klas, daa, pv, timestamp: serverTimestamp()
+                    student: naam, 
+                    partner: partners || "Individueel", 
+                    klas, 
+                    daa, 
+                    pv, 
+                    timestamp: serverTimestamp()
                 });
-                alert("Inzending opgeslagen!");
+                alert("Uw werk is succesvol opgeslagen in de database.");
                 location.reload();
-            } catch (e) { console.error(e); }
+            } catch (e) { 
+                console.error(e);
+                alert("Er ging iets mis met de verbinding.");
+            }
         }
 
         window.laadKlas = async (gekozenKlas) => {
             const lijst = document.getElementById('feedbackLijst');
-            lijst.innerHTML = "Laden...";
-            const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
-            const snap = await getDocs(q);
-            lijst.innerHTML = "";
-            snap.forEach(docSnap => {
-                const d = docSnap.data();
-                lijst.innerHTML += `
-                    <div class="bg-white border p-6 mb-4 shadow-sm text-left">
-                        <p class="text-xs font-bold text-blue-900">Auteur: ${d.student} | Partner: ${d.partner}</p>
-                        <div class="mt-4"><strong>DAA:</strong><p class="text-sm whitespace-pre-wrap">${d.daa}</p></div>
-                        <div class="mt-4"><strong>PV:</strong><p class="text-sm whitespace-pre-wrap">${d.pv}</p></div>
-                    </div>`;
-            });
+            lijst.innerHTML = "<p class='text-xs italic'>Inzendingen van " + gekozenKlas + " worden opgehaald...</p>";
+            try {
+                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
+                const snap = await getDocs(q);
+                lijst.innerHTML = "";
+                if(snap.empty) {
+                    lijst.innerHTML = "<p class='text-xs text-gray-500'>Nog geen inzendingen gevonden in klas " + gekozenKlas + ".</p>";
+                    return;
+                }
+                snap.forEach(docSnap => {
+                    const d = docSnap.data();
+                    lijst.innerHTML += `
+                        <div class="bg-white border-2 border-gray-100 p-6 mb-6 shadow-sm text-left">
+                            <div class="flex justify-between border-b pb-2 mb-4">
+                                <span class="text-[10px] font-bold text-blue-900 uppercase underline">Auteur: ${d.student}</span>
+                                <span class="text-[10px] font-bold text-gray-500 uppercase italic">Partners DAA: ${d.partner}</span>
+                            </div>
+                            <div class="mt-4"><strong class="text-[10px] uppercase text-gray-400">1. Doel Aanpak Analyse (DAA)</strong><p class="text-sm whitespace-pre-wrap font-serif mt-1 text-gray-800">${d.daa}</p></div>
+                            <div class="mt-4"><strong class="text-[10px] uppercase text-gray-400">2. Proces-verbaal van Bevindingen</strong><p class="text-sm whitespace-pre-wrap font-serif mt-1 text-gray-800">${d.pv}</p></div>
+                        </div>`;
+                });
+            } catch (e) { console.error(e); }
         };
 
-        window.submitCasus = submitCasus; window.wijsPartnerToe = wijsPartnerToe;
+        window.submitCasus = submitCasus;
     </script>
+
+    <style>
+        .police-blue { background-color: #002d5e; }
+        .border-police { border-color: #002d5e; }
+    </style>
 </head>
-<body class="bg-gray-100 p-8 font-sans">
-    <div class="max-w-4xl mx-auto">
-        <div class="bg-slate-800 text-white p-6 mb-4 rounded shadow border-b-4 border-blue-500">
-            <h3 class="text-xs font-bold uppercase tracking-widest mb-2">Stappenplan</h3>
-            <p class="text-xs">1. Vul je naam in. 2. Klik op 'Koppel' (werkt alleen als anderen ook in de lijst staan). 3. Schrijf je PV.</p>
+<body class="bg-gray-50 p-4 md:p-8 font-sans text-gray-900">
+    <div class="max-w-4xl mx-auto text-left">
+        
+        <div class="bg-slate-800 text-white p-5 mb-6 rounded shadow-lg border-b-4 border-blue-500">
+            <h3 class="text-xs font-bold uppercase tracking-widest mb-2 text-blue-300">Instructie Oefenmodule</h3>
+            <ul class="text-[11px] space-y-1 list-disc list-inside text-gray-300">
+                <li>Vul uw eigen <strong>Naam</strong> in en kies uw <strong>Klas</strong>.</li>
+                <li>Noteer bij 'Partner(s)' de naam/namen van de collega's met wie u de DAA opstelt (duo of trio).</li>
+                <li>Bestudeer de OC-melding en werk de opdrachten uit.</li>
+            </ul>
         </div>
 
-        <div class="bg-white p-8 border-b-4 border-blue-900 shadow mb-8">
-             <h2 class="text-center font-bold text-blue-900 mb-4">BERICHT OPERATIONEEL CENTRUM</h2>
-             <p class="italic text-center text-gray-700">"Motorrijder gevallen kruising Vincent van Goghweg/Westzijde Zaandam. Ambulance onderweg."</p>
-             <div class="grid grid-cols-3 gap-2 mt-6">
-                <img src="bord50.png" class="h-24 mx-auto object-contain border">
-                <img src="kruispuntgooglemaps.png" class="h-24 mx-auto object-cover border">
-                <img src="overzichtkruispunt.png" class="h-24 mx-auto object-cover border">
+        <div class="bg-white p-8 border-b-4 border-police shadow-sm mb-8">
+             <h2 class="text-[10px] font-black text-blue-900 mb-4 tracking-[0.2em] uppercase text-center">Bericht Operationeel Centrum</h2>
+             <p class="italic text-lg text-gray-700 leading-relaxed text-center">"Motorrijder gevallen op de kruising Vincent van Goghweg met de Westzijde, Zaandam. Ambulance is onderweg en u heeft toestemming."</p>
+             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 border-t pt-6">
+                <div class="text-center"><img src="bord50.png" class="h-28 mx-auto object-contain border rounded shadow-sm"><p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Situatie: 50 km/h zone</p></div>
+                <div class="text-center"><img src="kruispuntgooglemaps.png" class="h-28 mx-auto object-cover border rounded shadow-sm"><p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Zicht vanaf Westzijde</p></div>
+                <div class="text-center"><img src="overzichtkruispunt.png" class="h-28 mx-auto object-cover border rounded shadow-sm"><p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Luchtfoto kruising</p></div>
              </div>
         </div>
 
-        <div class="bg-white p-8 shadow rounded border border-gray-200 mb-8">
-            <div class="flex gap-4 mb-6">
-                <input type="text" id="naam" placeholder="Je naam" class="flex-1 border p-2 text-sm outline-none">
-                <select id="klas" class="border p-2 text-sm">
-                    <option value="Delta">Delta</option><option value="Echo">Echo</option><option value="Foxtrot">Foxtrot</option>
-                </select>
+        <div class="bg-white p-8 shadow-sm border border-gray-200 mb-12">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Naam Student</label>
+                    <input type="text" id="naam" placeholder="Uw eigen voornaam" class="w-full border p-2 text-sm bg-gray-50 outline-none focus:border-blue-900">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Klasgroep</label>
+                    <select id="klas" class="w-full border p-2 text-sm bg-gray-50 outline-none">
+                        <option value="Delta">Delta</option>
+                        <option value="Echo">Echo</option>
+                        <option value="Foxtrot">Foxtrot</option>
+                        <option value="Mike">Mike</option>
+                        <option value="Lima">Lima</option>
+                    </select>
+                </div>
             </div>
 
-            <div class="bg-blue-50 p-3 mb-6 flex justify-between items-center text-xs border-l-4 border-blue-900">
-                <span>Gekoppelde collega: <span id="partnerDisplay" class="font-bold">-</span></span>
-                <button onclick="wijsPartnerToe()" class="bg-blue-900 text-white px-3 py-1 rounded uppercase font-bold text-[10px]">Koppel</button>
-                <input type="hidden" id="hiddenPartner">
+            <div class="mb-8">
+                <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Partner(s) voor DAA (bijv. 1 of 2 collega's)</label>
+                <input type="text" id="partnerInput" placeholder="Namen van medestudenten" class="w-full border p-2 text-sm bg-blue-50 outline-none focus:border-blue-900 border-l-4 border-blue-900">
             </div>
 
-            <textarea id="daaText" placeholder="DAA Analyse..." class="w-full border p-3 text-sm mb-4 h-24 bg-gray-50"></textarea>
-            <textarea id="pvText" placeholder="PV van Bevindingen..." class="w-full border p-3 text-sm mb-4 h-40 bg-gray-50"></textarea>
-            
-            <button onclick="submitCasus()" class="w-full bg-blue-900 text-white font-bold py-3 uppercase tracking-widest hover:bg-black transition">Inleveren</button>
+            <div class="space-y-6">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase text-blue-900 mb-1">1. Doel Aanpak Analyse (DAA)</label>
+                    <textarea id="daaText" placeholder="Beschrijf hier uw gezamenlijke DAA..." class="w-full border p-4 text-sm h-32 bg-gray-50 focus:bg-white outline-none transition-all"></textarea>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold uppercase text-blue-900 mb-1">2. Proces-verbaal van Bevindingen</label>
+                    <textarea id="pvText" placeholder="Stel hier uw individuele PV van bevindingen op..." class="w-full border p-4 text-sm h-56 bg-gray-50 focus:bg-white outline-none transition-all"></textarea>
+                </div>
+                <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-4 uppercase tracking-[0.2em] text-sm hover:bg-black transition shadow-md">Definitief inleveren</button>
+            </div>
         </div>
 
-        <div class="text-center">
-            <h4 class="text-xs font-bold uppercase text-gray-500 mb-4 tracking-widest">Bekijk resultaten klas</h4>
-            <div class="flex justify-center gap-2 mb-8">
-                <button onclick="laadKlas('Delta')" class="bg-white border border-blue-900 px-4 py-1 text-[10px] font-bold">DELTA</button>
-                <button onclick="laadKlas('Echo')" class="bg-white border border-blue-900 px-4 py-1 text-[10px] font-bold">ECHO</button>
-                <button onclick="laadKlas('Foxtrot')" class="bg-white border border-blue-900 px-4 py-1 text-[10px] font-bold">FOXTROT</button>
+        <div class="text-center pb-20">
+            <h4 class="text-[10px] font-bold uppercase text-gray-400 mb-6 tracking-widest">Bekijk Resultaten Per Klas</h4>
+            <div class="flex flex-wrap justify-center gap-3 mb-10">
+                <button onclick="laadKlas('Delta')" class="bg-white border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-50 transition uppercase">Delta</button>
+                <button onclick="laadKlas('Echo')" class="bg-white border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-50 transition uppercase">Echo</button>
+                <button onclick="laadKlas('Foxtrot')" class="bg-white border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-50 transition uppercase">Foxtrot</button>
+                <button onclick="laadKlas('Mike')" class="bg-white border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-50 transition uppercase">Mike</button>
+                <button onclick="laadKlas('Lima')" class="bg-white border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-50 transition uppercase">Lima</button>
             </div>
-            <div id="feedbackLijst"></div>
+            <div id="feedbackLijst" class="max-w-3xl mx-auto"></div>
         </div>
     </div>
 </body>

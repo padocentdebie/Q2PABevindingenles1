@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Q2les1PVBevindingen</title>
+    <title>Q2les1PVBevindingen - Volledige Module</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBRq1HFmhrpW_EMMZwpURrbTArz-L5iWT4",
@@ -23,208 +23,220 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Update de nummers in de knoppen
-        async function updateTellers() {
-            const klassen = ['Delta', 'Echo', 'Foxtrot', 'Mike', 'Lima'];
-            for (const klas of klassen) {
-                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", klas));
-                const snap = await getDocs(q);
-                const tellerElement = document.getElementById(`count-${klas}`);
-                if (tellerElement) tellerElement.innerText = snap.size;
-            }
-        }
+        // --- WHITEBOARD LOGICA ---
+        const whiteboardRef = collection(db, "whiteboard_items");
+        window.sendToWhiteboard = async () => {
+            const tekst = document.getElementById('whiteboardInput').value.trim();
+            const klas = document.getElementById('klas').value;
+            if(!tekst) return;
+            try {
+                await addDoc(whiteboardRef, { tekst, klas, timestamp: serverTimestamp() });
+                document.getElementById('whiteboardInput').value = "";
+            } catch (e) { console.error(e); }
+        };
 
-        async function submitCasus() {
+        onSnapshot(query(whiteboardRef, orderBy("timestamp", "desc")), (snapshot) => {
+            const display = document.getElementById('whiteboardDisplay');
+            display.innerHTML = "";
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                display.innerHTML += `<div class="bg-yellow-100 p-3 shadow-md border-l-4 border-yellow-400 transform rotate-1 m-1 animate-in">
+                    <p class="text-[11px] font-serif italic text-gray-800">"${data.tekst}"</p>
+                    <p class="text-[8px] mt-2 font-bold text-blue-900 uppercase">${data.klas}</p>
+                </div>`;
+            });
+        });
+
+        // --- TRAINING FILMISCH SCHRIJVEN ---
+        window.checkTraining = () => {
+            const inputs = document.querySelectorAll('.oefening-input');
+            let correctCount = 0;
+            const verboden = ["werd", "worden", "is", "zijn", "was"];
+            
+            inputs.forEach(input => {
+                const val = input.value.toLowerCase();
+                const hasForbidden = verboden.some(v => val.includes(v));
+                if (val.length > 5 && !hasForbidden) {
+                    input.classList.add('border-green-500');
+                    input.classList.remove('border-yellow-400', 'border-red-500');
+                    correctCount++;
+                } else {
+                    input.classList.add('border-red-500');
+                    input.classList.remove('border-green-500');
+                }
+            });
+            const fb = document.getElementById('trainingFeedback');
+            fb.classList.remove('hidden');
+            fb.innerText = correctCount === 10 ? "✅ Uitstekend! Uw zinnen zijn nu actief en filmisch." : `⚠️ ${correctCount}/10 goed. Vermijd 'werd' of 'was' en gebruik de verleden tijd!`;
+        };
+
+        // --- CASUS & TELLERS ---
+        window.submitCasus = async () => {
             const naam = document.getElementById('naam').value.trim();
             const klas = document.getElementById('klas').value;
             const partners = document.getElementById('partnerInput').value.trim();
             const daa = document.getElementById('daaText').value.trim();
             const pv = document.getElementById('pvText').value.trim();
-            
             if(!naam || !daa || !pv) return alert("FOUT: Naam, DAA en PV zijn verplicht.");
-            
-            try {
-                await addDoc(collection(db, "casus_inzendingen"), {
-                    student: naam, 
-                    partner: partners || "Individueel", 
-                    klas, 
-                    daa, 
-                    pv, 
-                    timestamp: serverTimestamp()
-                });
-                alert("Inzending succesvol opgeslagen!");
-                location.reload();
-            } catch (e) { console.error(e); }
-        }
-
-        window.updateFeedback = async (docId, criteriaIndex, isChecked) => {
-            try {
-                const docRef = doc(db, "casus_inzendingen", docId);
-                await updateDoc(docRef, { [`feedback_${criteriaIndex}`]: isChecked });
-            } catch (e) { console.error(e); }
-        };
-
-        window.resetKlas = async () => {
-            const gekozenKlas = document.getElementById('currentKlas').innerText;
-            if (gekozenKlas === "-") return alert("Kies eerst een klas om te resetten.");
-            
-            if (confirm("LET OP: Wilt u alle inzendingen van klas " + gekozenKlas + " definitief verwijderen?")) {
-                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
-                const snap = await getDocs(q);
-                const deletePromises = [];
-                snap.forEach((docSnap) => {
-                    deletePromises.push(deleteDoc(doc(db, "casus_inzendingen", docSnap.id)));
-                });
-                await Promise.all(deletePromises);
-                alert("Klas " + gekozenKlas + " is gereset.");
-                location.reload();
-            }
+            await addDoc(collection(db, "casus_inzendingen"), { student: naam, partner: partners, klas, daa, pv, timestamp: serverTimestamp() });
+            alert("Inzending succesvol!"); location.reload();
         };
 
         window.laadKlas = async (gekozenKlas) => {
             document.getElementById('currentKlas').innerText = gekozenKlas;
             const lijst = document.getElementById('feedbackLijst');
             lijst.innerHTML = "<p class='text-xs italic'>Laden...</p>";
-            
-            try {
-                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
-                const snap = await getDocs(q);
-                let htmlContent = "";
-                
-                if(snap.empty) {
-                    lijst.innerHTML = "<p class='text-xs text-gray-500 font-bold uppercase'>Geen inzendingen gevonden.</p>";
-                    return;
-                }
-
-                snap.forEach(docSnap => {
-                    const d = docSnap.data();
-                    const id = docSnap.id;
-                    const criteria = ["Positionering voertuig", "Veiligheidsmaatregelen", "METHANE-methode", "Strafbaar feit", "Partners (VOA/Ambu)", "Opsporingstaken"];
-                    
-                    let feedbackHtml = "";
-                    criteria.forEach((label, index) => {
-                        const isChecked = d[`feedback_${index}`] ? "checked" : "";
-                        feedbackHtml += `
-                            <label class="flex items-center p-1 cursor-pointer hover:bg-white transition text-left">
-                                <input type="checkbox" class="mr-2 h-3 w-3 accent-blue-900" ${isChecked} onchange="window.updateFeedback('${id}', ${index}, this.checked)"> 
-                                ${label}
-                            </label>`;
-                    });
-
-                    htmlContent += `
-                        <div class="bg-white border-2 border-gray-100 p-6 mb-10 shadow-sm text-left rounded-sm">
-                            <div class="flex justify-between border-b pb-2 mb-4">
-                                <span class="text-[10px] font-bold text-blue-900 uppercase">Auteur: ${d.student}</span>
-                                <span class="text-[10px] font-bold text-gray-500 uppercase italic">Partner(s) DAA: ${d.partner}</span>
-                            </div>
-                            <div class="space-y-4">
-                                <div><strong class="text-[9px] uppercase text-gray-400">DAA Analyse</strong><p class="text-sm whitespace-pre-wrap font-serif mt-1 text-gray-800">${d.daa}</p></div>
-                                <div><strong class="text-[9px] uppercase text-gray-400">PV van Bevindingen</strong><p class="text-sm whitespace-pre-wrap font-serif mt-1 text-gray-800 border-t pt-2">${d.pv}</p></div>
-                            </div>
-                            <div class="bg-blue-50/50 p-4 mt-8 border border-blue-100 rounded text-[10px]">
-                                <p class="font-bold mb-3 uppercase text-blue-900 border-b pb-1">Peer Feedback Checklist:</p>
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">${feedbackHtml}</div>
-                            </div>
-                        </div>`;
+            const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
+            const snap = await getDocs(q);
+            let htmlContent = "";
+            snap.forEach(docSnap => {
+                const d = docSnap.data(); const id = docSnap.id;
+                const criteria = ["Positionering", "Veiligheid", "METHANE", "Strafbaar feit", "Partners", "Opsporingstaken"];
+                let fbHtml = "";
+                criteria.forEach((label, i) => {
+                    const chk = d[`feedback_${i}`] ? "checked" : "";
+                    fbHtml += `<label class="flex items-center p-1 cursor-pointer"><input type="checkbox" class="mr-2 h-3 w-3 accent-blue-900" ${chk} onchange="window.updateFeedback('${id}', ${i}, this.checked)"> ${label}</label>`;
                 });
-                lijst.innerHTML = htmlContent;
-            } catch (e) { console.error(e); }
+                htmlContent += `<div class="bg-white border-2 border-gray-100 p-6 mb-8 text-left shadow-sm">
+                    <div class="flex justify-between border-b pb-2 mb-4"><span class="text-[10px] font-bold text-blue-900 uppercase">${d.student}</span><span class="text-[10px] italic text-gray-400">${d.partner}</span></div>
+                    <div class="space-y-4 font-serif text-sm"><div><strong>DAA:</strong><p>${d.daa}</p></div><div><strong>PV:</strong><p class="border-t pt-2">${d.pv}</p></div></div>
+                    <div class="bg-blue-50/50 p-4 mt-6 border rounded text-[10px]"><p class="font-bold mb-2 uppercase text-blue-900">Peer Feedback Checklist:</p><div class="grid grid-cols-2 gap-2">${fbHtml}</div></div>
+                </div>`;
+            });
+            lijst.innerHTML = htmlContent || "<p class='text-xs font-bold uppercase text-gray-400'>Geen inzendingen gevonden.</p>";
         };
 
-        window.submitCasus = submitCasus;
-        window.onload = updateTellers;
+        window.updateFeedback = async (id, i, val) => { await updateDoc(doc(db, "casus_inzendingen", id), { [`feedback_${i}`]: val }); };
+        
+        window.resetKlas = async () => { 
+            const k = document.getElementById('currentKlas').innerText;
+            if(k === "-") return alert("Kies eerst een klas.");
+            if(confirm("Alle data van "+k+" definitief verwijderen?")) {
+                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", k));
+                const snap = await getDocs(q);
+                snap.forEach(async d => await deleteDoc(doc(db, "casus_inzendingen", d.id)));
+                alert("Klas gereset."); location.reload();
+            }
+        };
+
+        window.onload = async () => {
+            const klassen = ['Delta', 'Echo', 'Foxtrot', 'Mike', 'Lima'];
+            for (const k of klassen) {
+                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", k));
+                const s = await getDocs(q);
+                document.getElementById(`count-${k}`).innerText = s.size;
+            }
+        };
     </script>
 
     <style>
         .police-blue { background-color: #002d5e; }
         .border-police { border-color: #002d5e; }
+        .animate-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-gray-50 p-4 md:p-8 font-sans">
+<body class="bg-gray-100 p-4 md:p-8 font-sans">
     <div class="max-w-4xl mx-auto">
         
-        <header class="bg-slate-800 text-white p-6 mb-8 rounded shadow border-b-4 border-blue-500">
-            <h3 class="text-xs font-bold uppercase tracking-widest mb-2 text-blue-300 text-left">Instructie Oefenmodule</h3>
-            <ul class="text-[11px] space-y-1 list-disc list-inside text-gray-300 text-left">
-                <li>Vul uw <strong>Naam</strong> in en selecteer uw <strong>Klas</strong>.</li>
-                <li>Noteer uw <strong>Partner(s)</strong> voor de DAA.</li>
-                <li>Na inleveren kunt u onderaan feedback geven op klasgenoten.</li>
-            </ul>
-        </header>
+        <section class="bg-white border-2 border-police p-6 mb-8 shadow-lg">
+            <h2 class="text-center text-[11px] font-black text-blue-900 uppercase tracking-widest mb-4">Whiteboard: Redenen van Wetenschap</h2>
+            <div class="flex gap-2 mb-4">
+                <input type="text" id="whiteboardInput" placeholder="Typ hier een waarneming (zin)..." class="flex-1 border-b-2 p-2 text-sm outline-none focus:border-blue-900 bg-gray-50">
+                <button onclick="sendToWhiteboard()" class="police-blue text-white px-6 py-2 text-[10px] font-bold uppercase tracking-widest">Plaatsen</button>
+            </div>
+            <div id="whiteboardDisplay" class="grid grid-cols-2 md:grid-cols-4 gap-2 min-h-[120px] p-2 bg-slate-50 shadow-inner max-h-64 overflow-y-auto"></div>
+        </section>
 
-        <section class="bg-white p-8 border-b-4 border-police shadow-sm mb-12">
-             <h2 class="text-[10px] font-black text-blue-900 mb-4 tracking-widest uppercase text-center underline">Bericht Operationeel Centrum</h2>
-             <p class="italic text-lg text-gray-700 leading-relaxed font-serif text-center">"Motorrijder gevallen op de kruising Vincent van Goghweg met de Westzijde, Zaandam. Ambulance is onderweg."</p>
-             
-             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 border-t pt-6">
-                <div class="text-center">
-                    <img src="bord50.png" class="h-28 mx-auto object-contain border rounded shadow-sm">
-                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Situatie: 50 km/h zone</p>
-                </div>
-                <div class="text-center">
-                    <img src="overzichtkruispunt.png" class="h-28 mx-auto object-cover border rounded shadow-sm">
-                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Luchtfoto kruising</p>
-                </div>
-                <div class="text-center">
-                    <img src="kruispuntgooglemaps.png" class="h-28 mx-auto object-cover border rounded shadow-sm">
-                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Zicht vanaf Westzijde</p>
-                </div>
+        <section class="bg-white p-8 border-b-4 border-police shadow-sm mb-8">
+             <h2 class="text-[10px] font-bold text-blue-900 uppercase underline mb-4 text-left">Bericht Operationeel Centrum</h2>
+             <p class="italic text-lg text-gray-700 font-serif mb-8 text-left">"Motorrijder gevallen op de kruising Vincent van Goghweg met de Westzijde, Zaandam. Ambulance is onderweg."</p>
+             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-6">
+                <div class="text-center"><img src="bord50.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold">Situatie: 50 km/h zone</p></div>
+                <div class="text-center"><img src="overzichtkruispunt.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold">Luchtfoto kruising</p></div>
+                <div class="text-center"><img src="kruispuntgooglemaps.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold">Zicht vanaf Westzijde</p></div>
              </div>
         </section>
 
-        <section class="bg-white p-8 border border-gray-200 shadow-sm mb-12 text-left">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 text-left">
-                <div>
-                    <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Naam Student</label>
-                    <input type="text" id="naam" placeholder="Uw voornaam" class="w-full border p-2 text-sm bg-gray-50 outline-none focus:border-blue-900 text-left">
+        <section class="bg-blue-900 text-white p-8 mb-12 shadow-lg border-l-8 border-yellow-400">
+            <h2 class="text-[11px] font-black uppercase tracking-widest mb-4 text-yellow-400 text-left">Training: Van Passief naar Filmisch Actief</h2>
+            <p class="text-[10px] mb-6 opacity-80 text-left italic">Schrijf in de <strong>verleden tijd</strong> en vermijd woorden als 'werd', 'was' of 'is'.</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">1. De afslag werd door de bestuurder gemist.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
                 </div>
-                <div>
-                    <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Klasgroep</label>
-                    <select id="klas" class="w-full border p-2 text-sm bg-gray-50 outline-none text-left">
-                        <option value="Delta">Delta</option><option value="Echo">Echo</option><option value="Foxtrot">Foxtrot</option><option value="Mike">Mike</option><option value="Lima">Lima</option>
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">2. Het bewijs was door de hitte gebrand.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                </div>
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">3. De controle werd door hem verloren.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                </div>
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">4. De verdachte werd door ons staande gehouden.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                </div>
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">5. Het portier werd door mij geopend.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                </div>
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">6. Er werd door de getuige luid geschreeuwd.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                </div>
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">7. De alcoholtest werd door de man geweigerd.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                </div>
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">8. Een mes werd in de struiken gevonden.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                </div>
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">9. De snelheid werd door ons gemeten op 80 km/h.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                </div>
+                <div class="bg-blue-800/40 p-3 rounded border border-blue-700">
+                    <p class="text-[9px] text-blue-200 uppercase mb-1">10. Het slachtoffer werd naar de ambulance begeleid.</p>
+                    <input type="text" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none focus:bg-blue-900">
+                </div>
+            </div>
+            <div class="mt-8 flex justify-between items-center">
+                <button onclick="checkTraining()" class="bg-yellow-400 text-blue-900 px-6 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-white transition">Check Actieve Vorm</button>
+                <div id="trainingFeedback" class="text-[10px] font-bold text-yellow-400 hidden"></div>
+            </div>
+        </section>
+
+        <section class="bg-white p-8 border border-gray-200 shadow-sm mb-12 text-left">
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Naam</label><input type="text" id="naam" class="w-full border p-2 text-sm bg-gray-50 outline-none focus:border-blue-900"></div>
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Klas</label>
+                    <select id="klas" class="w-full border p-2 text-sm bg-gray-50 outline-none">
+                        <option>Delta</option><option>Echo</option><option>Foxtrot</option><option>Mike</option><option>Lima</option>
                     </select>
                 </div>
             </div>
-            <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Partner(s) voor DAA</label>
-            <input type="text" id="partnerInput" placeholder="Namen medestudenten" class="w-full border p-2 text-sm bg-blue-50 outline-none focus:border-blue-900 mb-6 border-l-4 border-blue-900 text-left">
-            
-            <textarea id="daaText" placeholder="1. Doel Aanpak Analyse (DAA)..." class="w-full border p-4 text-sm h-32 bg-gray-50 focus:bg-white outline-none mb-4 text-left"></textarea>
-            <textarea id="pvText" placeholder="2. Proces-verbaal van Bevindingen..." class="w-full border p-4 text-sm h-56 bg-gray-50 focus:bg-white outline-none mb-4 text-left"></textarea>
-            <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-4 uppercase tracking-widest text-sm hover:bg-black transition shadow-md">Definitief inleveren</button>
+            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Partner(s) DAA</label>
+            <input type="text" id="partnerInput" class="w-full border p-2 text-sm mb-4 border-l-4 border-blue-900 bg-blue-50 outline-none">
+            <textarea id="daaText" placeholder="1. DAA (Doel Aanpak Analyse)..." class="w-full border p-4 text-sm h-32 bg-gray-50 mb-4 outline-none focus:bg-white"></textarea>
+            <textarea id="pvText" placeholder="2. Proces-verbaal van Bevindingen (Schrijf Filmisch!)..." class="w-full border p-4 text-sm h-56 bg-gray-50 mb-4 outline-none focus:bg-white"></textarea>
+            <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-4 uppercase text-sm hover:bg-black transition shadow-md">Definitief Inleveren</button>
         </section>
 
         <section class="text-center pb-20 border-t pt-10">
-            <h4 class="text-[10px] font-bold uppercase text-gray-400 mb-6 tracking-widest">Bekijk Feedback & Resultaten (<span id="currentKlas">-</span>)</h4>
-            <div class="flex flex-wrap justify-center gap-4 mb-10">
-                <button onclick="laadKlas('Delta')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
-                    <span>Delta</span>
-                    <span id="count-Delta" class="text-[8px] opacity-70 mt-1">0</span>
-                </button>
-                <button onclick="laadKlas('Echo')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
-                    <span>Echo</span>
-                    <span id="count-Echo" class="text-[8px] opacity-70 mt-1">0</span>
-                </button>
-                <button onclick="laadKlas('Foxtrot')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
-                    <span>Foxtrot</span>
-                    <span id="count-Foxtrot" class="text-[8px] opacity-70 mt-1">0</span>
-                </button>
-                <button onclick="laadKlas('Mike')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
-                    <span>Mike</span>
-                    <span id="count-Mike" class="text-[8px] opacity-70 mt-1">0</span>
-                </button>
-                <button onclick="laadKlas('Lima')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
-                    <span>Lima</span>
-                    <span id="count-Lima" class="text-[8px] opacity-70 mt-1">0</span>
-                </button>
+            <h4 class="text-[10px] font-bold text-gray-400 uppercase mb-6 tracking-widest">Inzendingen per Klas (<span id="currentKlas">-</span>)</h4>
+            <div class="flex flex-wrap justify-center gap-2 mb-10">
+                <button onclick="laadKlas('Delta')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Delta (<span id="count-Delta">0</span>)</button>
+                <button onclick="laadKlas('Echo')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Echo (<span id="count-Echo">0</span>)</button>
+                <button onclick="laadKlas('Foxtrot')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Foxtrot (<span id="count-Foxtrot">0</span>)</button>
+                <button onclick="laadKlas('Mike')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Mike (<span id="count-Mike">0</span>)</button>
+                <button onclick="laadKlas('Lima')" class="police-blue text-white px-4 py-2 text-[10px] font-bold rounded-sm hover:bg-black">Lima (<span id="count-Lima">0</span>)</button>
             </div>
-            
             <div id="feedbackLijst" class="max-w-3xl mx-auto mb-10"></div>
-
-            <div class="mt-20 pt-10 border-t border-red-100">
-                <button onclick="resetKlas()" class="text-[9px] font-bold text-red-400 border border-red-200 px-4 py-2 rounded hover:bg-red-600 hover:text-white transition uppercase">
-                    ⚠️ Systeem Reset (Docent)
-                </button>
-            </div>
+            <button onclick="resetKlas()" class="text-[9px] font-bold text-red-400 border border-red-100 px-4 py-1 hover:bg-red-500 hover:text-white transition uppercase">⚠️ Reset Klas</button>
         </section>
     </div>
 </body>

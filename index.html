@@ -8,7 +8,7 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, where, getDocs, doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBRq1HFmhrpW_EMMZwpURrbTArz-L5iWT4",
@@ -53,17 +53,39 @@
             } catch (e) { console.error(e); }
         };
 
+        // De reset-functie voor de docent
+        window.resetKlas = async () => {
+            const gekozenKlas = document.getElementById('currentKlas').innerText;
+            if (gekozenKlas === "-") return alert("Kies eerst een klas om te resetten.");
+            
+            if (confirm("LET OP: Wilt u alle inzendingen van klas " + gekozenKlas + " definitief verwijderen?")) {
+                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
+                const snap = await getDocs(q);
+                const deletePromises = [];
+                snap.forEach((docSnap) => {
+                    deletePromises.push(deleteDoc(doc(db, "casus_inzendingen", docSnap.id)));
+                });
+                await Promise.all(deletePromises);
+                alert("Klas " + gekozenKlas + " is succesvol gereset.");
+                window.laadKlas(gekozenKlas);
+            }
+        };
+
         window.laadKlas = async (gekozenKlas) => {
+            document.getElementById('currentKlas').innerText = gekozenKlas;
             const lijst = document.getElementById('feedbackLijst');
-            lijst.innerHTML = "<p class='text-xs italic'>Resultaten van " + gekozenKlas + " laden...</p>";
+            lijst.innerHTML = "<p class='text-xs italic'>Laden...</p>";
+            
             try {
                 const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
                 const snap = await getDocs(q);
-                lijst.innerHTML = "";
+                let htmlContent = ""; // Verzamel eerst alle HTML om dubbele weergave te voorkomen
+                
                 if(snap.empty) {
-                    lijst.innerHTML = "<p class='text-xs text-gray-500 font-bold uppercase'>Geen inzendingen gevonden in deze klas.</p>";
+                    lijst.innerHTML = "<p class='text-xs text-gray-500 font-bold'>Geen inzendingen gevonden.</p>";
                     return;
                 }
+
                 snap.forEach(docSnap => {
                     const d = docSnap.data();
                     const id = docSnap.id;
@@ -79,7 +101,7 @@
                             </label>`;
                     });
 
-                    lijst.innerHTML += `
+                    htmlContent += `
                         <div class="bg-white border-2 border-gray-100 p-6 mb-10 shadow-sm text-left rounded-sm">
                             <div class="flex justify-between border-b pb-2 mb-4">
                                 <span class="text-[10px] font-bold text-blue-900 uppercase">Auteur: ${d.student}</span>
@@ -95,6 +117,7 @@
                             </div>
                         </div>`;
                 });
+                lijst.innerHTML = htmlContent;
             } catch (e) { console.error(e); }
         };
 
@@ -111,16 +134,16 @@
         
         <header class="bg-slate-800 text-white p-6 mb-8 rounded shadow border-b-4 border-blue-500">
             <h3 class="text-xs font-bold uppercase tracking-widest mb-2 text-blue-300">Instructie Oefenmodule</h3>
-            <ul class="text-[11px] space-y-1 list-disc list-inside text-gray-300">
+            <ul class="text-[11px] space-y-1 list-disc list-inside text-gray-300 text-left">
                 <li>Vul uw <strong>Naam</strong> in en selecteer uw <strong>Klas</strong>.</li>
-                <li>Noteer uw <strong>Partner(s)</strong> (voor trio's mogen 2 namen ingevuld worden).</li>
-                <li>Na inleveren kunt u onderaan de pagina feedback geven op klasgenoten.</li>
+                <li>Noteer uw <strong>Partner(s)</strong> voor de DAA.</li>
+                <li>Na inleveren kunt u onderaan feedback geven op klasgenoten.</li>
             </ul>
         </header>
 
-        <section class="bg-white p-8 border-b-4 border-police shadow-sm mb-12 text-center">
+        <section class="bg-white p-8 border-b-4 border-police shadow-sm mb-12">
              <h2 class="text-[10px] font-black text-blue-900 mb-4 tracking-widest uppercase text-center underline">Bericht Operationeel Centrum</h2>
-             <p class="italic text-lg text-gray-700 leading-relaxed font-serif text-center">"Wilt u gaan naar de kruising Vincent van Goghweg met de Westzijde, 1506 GC Zaandam. Hier is een motorrijder gevallen. De ambulance is onderweg."</p>
+             <p class="italic text-lg text-gray-700 leading-relaxed font-serif text-center">"Motorrijder gevallen op de kruising Vincent van Goghweg met de Westzijde, Zaandam. Ambulance is onderweg."</p>
              
              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 border-t pt-6">
                 <div class="text-center">
@@ -128,12 +151,12 @@
                     <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Situatie: 50 km/h zone</p>
                 </div>
                 <div class="text-center">
-                    <img src="kruispuntgooglemaps.png" class="h-28 mx-auto object-cover border rounded shadow-sm">
-                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">luchtfoto kruispunt</p>
+                    <img src="overzichtkruispunt.png" class="h-28 mx-auto object-cover border rounded shadow-sm">
+                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Luchtfoto kruising</p>
                 </div>
                 <div class="text-center">
-                    <img src="overzichtkruispunt.png" class="h-28 mx-auto object-cover border rounded shadow-sm">
-                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">zicht vanaf westzijde</p>
+                    <img src="kruispuntgooglemaps.png" class="h-28 mx-auto object-cover border rounded shadow-sm">
+                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Zicht vanaf Westzijde</p>
                 </div>
              </div>
         </section>
@@ -152,15 +175,15 @@
                 </div>
             </div>
             <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Partner(s) voor DAA</label>
-            <input type="text" id="partnerInput" placeholder="Namen medestudenten" class="w-full border p-2 text-sm bg-blue-50 outline-none focus:border-blue-900 mb-6 border-l-4 border-blue-900 text-left">
+            <input type="text" id="partnerInput" placeholder="Namen medestudenten" class="w-full border p-2 text-sm bg-blue-50 outline-none focus:border-blue-900 mb-6 border-l-4 border-blue-900">
             
-            <textarea id="daaText" placeholder="1. Doel Aanpak Analyse (DAA)..." class="w-full border p-4 text-sm h-32 bg-gray-50 focus:bg-white outline-none mb-4 text-left"></textarea>
-            <textarea id="pvText" placeholder="2. Proces-verbaal van Bevindingen..." class="w-full border p-4 text-sm h-56 bg-gray-50 focus:bg-white outline-none mb-4 text-left"></textarea>
+            <textarea id="daaText" placeholder="1. Doel Aanpak Analyse (DAA)..." class="w-full border p-4 text-sm h-32 bg-gray-50 focus:bg-white outline-none mb-4"></textarea>
+            <textarea id="pvText" placeholder="2. Proces-verbaal van Bevindingen..." class="w-full border p-4 text-sm h-56 bg-gray-50 focus:bg-white outline-none mb-4"></textarea>
             <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-4 uppercase tracking-widest text-sm hover:bg-black transition shadow-md">Definitief inleveren</button>
         </section>
 
         <section class="text-center pb-20 border-t pt-10">
-            <h4 class="text-[10px] font-bold uppercase text-gray-400 mb-6 tracking-widest">Bekijk Feedback & Resultaten</h4>
+            <h4 class="text-[10px] font-bold uppercase text-gray-400 mb-6 tracking-widest">Bekijk Feedback & Resultaten (<span id="currentKlas">-</span>)</h4>
             <div class="flex flex-wrap justify-center gap-2 mb-10">
                 <button onclick="laadKlas('Delta')" class="border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-900 hover:text-white transition uppercase">Delta</button>
                 <button onclick="laadKlas('Echo')" class="border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-900 hover:text-white transition uppercase">Echo</button>
@@ -168,7 +191,15 @@
                 <button onclick="laadKlas('Mike')" class="border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-900 hover:text-white transition uppercase">Mike</button>
                 <button onclick="laadKlas('Lima')" class="border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-900 hover:text-white transition uppercase">Lima</button>
             </div>
-            <div id="feedbackLijst" class="max-w-3xl mx-auto"></div>
+            
+            <div id="feedbackLijst" class="max-w-3xl mx-auto mb-10"></div>
+
+            <div class="mt-20 pt-10 border-t border-red-100">
+                <button onclick="resetKlas()" class="text-[9px] font-bold text-red-400 border border-red-200 px-4 py-2 rounded hover:bg-red-600 hover:text-white transition">
+                    ⚠️ SYSTEEM RESET (DOCENT)
+                </button>
+                <p class="text-[8px] text-gray-400 mt-2 uppercase italic">Hiermee verwijdert u alle inzendingen uit de geselecteerde klas.</p>
+            </div>
         </section>
     </div>
 </body>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Module PV Bevindingen - De Ik-Vorm Editie</title>
+    <title>Module PV Bevindingen - Volledige Versie</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
     <script type="module">
@@ -34,7 +34,7 @@
 
         onSnapshot(query(collection(db, "whiteboard_redenen"), orderBy("timestamp", "desc")), (s) => {
             const d = document.getElementById('displayRedenen'); d.innerHTML = "";
-            s.forEach(doc => { const data = doc.data(); d.innerHTML += `<div class="bg-yellow-100 p-2 shadow border-l-4 border-yellow-400 m-1 animate-in text-[11px] font-serif italic italic text-gray-800">"${data.tekst}"<br><span class="text-[7px] font-bold text-blue-900">${data.klas}</span></div>`; });
+            s.forEach(doc => { const data = doc.data(); d.innerHTML += `<div class="bg-yellow-100 p-2 shadow border-l-4 border-yellow-400 m-1 animate-in text-[11px] font-serif italic text-gray-800">"${data.tekst}"<br><span class="text-[7px] font-bold text-blue-900">${data.klas}</span></div>`; });
         });
 
         onSnapshot(query(collection(db, "whiteboard_filmisch"), orderBy("timestamp", "desc")), (s) => {
@@ -47,12 +47,10 @@
             const inputs = document.querySelectorAll('.oefening-input');
             let correctCount = 0;
             const verboden = ["werd", "worden", "is", "zijn", "was", "door", "wij", "we"];
-            
             inputs.forEach(input => {
                 const val = input.value.toLowerCase().trim();
                 const startsWithIk = val.startsWith("ik ");
                 const hasForbidden = verboden.some(v => val.includes(v));
-                
                 if (val.length > 5 && startsWithIk && !hasForbidden) {
                     input.className = "oefening-input w-full bg-blue-900 border-b-2 border-green-500 p-1 text-xs outline-none text-white";
                     correctCount++;
@@ -62,7 +60,7 @@
             });
             const fb = document.getElementById('trainingFeedback');
             fb.classList.remove('hidden');
-            fb.innerText = correctCount === 10 ? "✅ Uitstekend: 10/10 in de ik-vorm!" : `⚠️ ${correctCount}/10 goed. Gebruik 'Ik...' en vermijd passieve woorden of 'Wij'.`;
+            fb.innerText = correctCount === 10 ? "✅ 10/10: Perfecte ik-vorm!" : `⚠️ ${correctCount}/10 goed. Begin met 'Ik' en vermijd hulpwerkwoorden.`;
         };
 
         // --- INLEVEREN & TELLERS ---
@@ -108,41 +106,67 @@
 <body class="bg-gray-100 p-4 md:p-8 font-sans text-gray-900">
     <div class="max-w-4xl mx-auto">
         
+        <header class="bg-slate-800 text-white p-6 mb-8 rounded shadow border-b-4 border-blue-500">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-xs font-bold uppercase tracking-widest mb-2 text-blue-300">Instructie Oefenmodule</h3>
+                    <ul class="text-[10px] space-y-1 list-disc list-inside text-gray-300 text-left">
+                        <li>Deel je waarnemingen op het <strong>Whiteboard</strong>.</li>
+                        <li>Oefen de <strong>Ik-vorm</strong> in de training (verplicht voor groen).</li>
+                        <li>Schrijf je PV filmisch op basis van de casus.</li>
+                    </ul>
+                </div>
+                <div class="bg-slate-700/50 p-3 rounded border border-slate-600 text-left">
+                    <h3 class="text-[9px] font-black uppercase tracking-widest mb-2 text-yellow-400">Filmisch Schrijven:</h3>
+                    <div class="grid grid-cols-2 gap-2 text-[9px]">
+                        <div class="text-red-400 font-bold uppercase">Niet: "De man werd..."</div>
+                        <div class="text-green-400 font-bold uppercase">Wel: "Ik fouilleerde..."</div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-            <section class="bg-white border-2 border-blue-900 p-4 shadow-md rounded-sm">
-                <h2 class="text-[10px] font-black text-blue-900 uppercase tracking-tighter mb-4">1. Redenen van Wetenschap (Waarneming)</h2>
+            <section class="bg-white border-2 border-blue-900 p-4 shadow-md rounded-sm text-left">
+                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-4">1. Redenen van Wetenschap</h2>
                 <input type="text" id="inputRedenen" placeholder="Ik zag/hoorde/rook..." class="w-full border-b mb-2 p-1 text-xs outline-none bg-gray-50">
                 <button onclick="sendToBoard('inputRedenen', 'whiteboard_redenen')" class="police-blue text-white w-full py-1 text-[9px] font-bold uppercase">Plaatsen</button>
                 <div id="displayRedenen" class="grid grid-cols-2 gap-1 mt-4 max-h-40 overflow-y-auto"></div>
             </section>
-
-            <section class="bg-white border-2 border-blue-900 p-4 shadow-md rounded-sm">
-                <h2 class="text-[10px] font-black text-blue-900 uppercase tracking-tighter mb-4">2. Filmisch Schrijven (Ik-vorm)</h2>
+            <section class="bg-white border-2 border-blue-900 p-4 shadow-md rounded-sm text-left">
+                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-4">2. Filmisch Schrijven</h2>
                 <input type="text" id="inputFilmisch" placeholder="Ik opende/pakte/rende..." class="w-full border-b mb-2 p-1 text-xs outline-none bg-gray-50">
                 <button onclick="sendToBoard('inputFilmisch', 'whiteboard_filmisch')" class="bg-blue-900 text-white w-full py-1 text-[9px] font-bold uppercase">Plaatsen</button>
                 <div id="displayFilmisch" class="grid grid-cols-2 gap-1 mt-4 max-h-40 overflow-y-auto"></div>
             </section>
         </div>
 
+        <section class="bg-white p-8 border-b-4 border-police shadow-sm mb-8 text-left">
+             <h2 class="text-[10px] font-bold text-blue-900 uppercase underline mb-4 tracking-widest">Bericht Operationeel Centrum</h2>
+             <p class="italic text-lg text-gray-700 font-serif mb-8 font-bold">"Motorrijder gevallen op de kruising Vincent van Goghweg met de Westzijde, Zaandam. Ambulance is onderweg."</p>
+             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-6">
+                <div class="text-center"><img src="bord50.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold italic">Max. 50 km/h</p></div>
+                <div class="text-center"><img src="overzichtkruispunt.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold italic">Luchtfoto</p></div>
+                <div class="text-center"><img src="kruispuntgooglemaps.png" class="h-24 mx-auto border shadow-sm"><p class="text-[8px] mt-1 uppercase text-gray-400 font-bold italic">Zicht vanaf Westzijde</p></div>
+             </div>
+        </section>
+
         <section class="bg-blue-900 text-white p-6 mb-8 shadow-lg border-l-8 border-yellow-400 text-left">
             <h2 class="text-[11px] font-black uppercase tracking-widest mb-4 text-yellow-400">Training: Actieve Ik-Vorm</h2>
-            <p class="text-[10px] mb-4 opacity-80 italic">Zet om naar de actieve vorm. Begin ELKE zin met <strong>'Ik'</strong>.</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">1. De afslag werd door mij gemist.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">2. De man werd door mij gefouilleerd.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">3. De controle werd door mij verloren.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">4. De verdachte werd door mij staande gehouden.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">5. Het portier werd door mij geopend.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">6. Er werd door mij om assistentie geroepen.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">7. De alcoholtest werd door mij afgenomen.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">8. Het mes werd door mij gevonden.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">9. De snelheid werd door mij gemeten.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">10. Het slachtoffer werd door mij begeleid.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mb-6">
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">1. Afslag werd door mij gemist.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">2. Man werd door mij gefouilleerd.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">3. Controle werd door mij verloren.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">4. Verdachte werd staande gehouden.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">5. Portier werd door mij geopend.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">6. Er werd door mij geroepen.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">7. Alcoholtest werd afgenomen.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">8. Mes werd door mij gevonden.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">9. Snelheid werd door mij gemeten.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">10. Slachtoffer werd begeleid.</p><input type="text" placeholder="Ik..." class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
             </div>
-            <div class="mt-6">
-                <button onclick="checkTraining()" class="bg-yellow-400 text-blue-900 px-6 py-2 text-[10px] font-black uppercase">Controleer Ik-vorm</button>
-                <span id="trainingFeedback" class="ml-4 text-[10px] font-bold"></span>
-            </div>
+            <button onclick="checkTraining()" class="bg-yellow-400 text-blue-900 px-6 py-2 text-[10px] font-black uppercase">Check</button>
+            <span id="trainingFeedback" class="ml-4 text-[10px] font-bold"></span>
         </section>
 
         <section class="bg-white p-6 border shadow-sm mb-8 text-left">
@@ -154,8 +178,8 @@
             </div>
             <input type="text" id="partnerInput" placeholder="Partner(s) DAA" class="w-full border p-2 text-sm mb-4 outline-none bg-gray-50">
             <textarea id="daaText" placeholder="DAA Analyse..." class="w-full border p-3 text-sm h-24 mb-4 outline-none focus:bg-white"></textarea>
-            <textarea id="pvText" placeholder="Proces-verbaal (Schrijf vanuit de IK-vorm!)..." class="w-full border p-3 text-sm h-48 mb-4 outline-none focus:bg-white"></textarea>
-            <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-3 uppercase text-xs shadow-md">Definitief Inleveren</button>
+            <textarea id="pvText" placeholder="Proces-verbaal (Ik-vorm!)..." class="w-full border p-3 text-sm h-48 mb-4 outline-none focus:bg-white"></textarea>
+            <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-3 uppercase text-xs shadow-md">Inleveren</button>
         </section>
 
         <div class="flex flex-wrap justify-center gap-2 mb-8">

@@ -8,7 +8,7 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBRq1HFmhrpW_EMMZwpURrbTArz-L5iWT4",
@@ -49,7 +49,11 @@
                                 <span>${data.naam}</span><span>${data.type}</span>
                             </div>
                             <p class="text-slate-800 italic mb-2">"${data.txt}"</p>
-                            ${data.feedback ? `<div class="mt-2 pt-2 border-t border-slate-100 text-[10px] text-blue-700 font-bold uppercase">Checks: ${data.feedback}</div>` : ''}
+                            ${data.feedback ? `
+                                <div class="mt-3 p-2 bg-slate-50 border-t border-slate-200 rounded">
+                                    <span class="text-[9px] font-black text-blue-800 uppercase block mb-1">Feedback Punten:</span>
+                                    <p class="text-[10px] text-slate-600 font-bold italic">${data.feedback}</p>
+                                </div>` : ''}
                         </div>`;
                 });
             });
@@ -61,12 +65,12 @@
             const klas = document.getElementById('uKlas').value;
             if(!txt) return alert("Veld is leeg.");
             
-            // Haal actuele feedback checks op
             const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
+            const feedbackString = gekozen.join(", ");
             
             await addDoc(collection(db, "btv_2026"), { 
                 naam, klas, type, txt, ts: serverTimestamp(),
-                feedback: gekozen.join(", ")
+                feedback: feedbackString
             });
             alert(type + " is succesvol verzonden!");
         };
@@ -75,7 +79,8 @@
             if(confirm("Weet je zeker dat je alle tekstvelden wilt leegmaken?")) {
                 document.querySelectorAll('textarea').forEach(t => t.value = "");
                 document.getElementById('liveScore').innerText = "0";
-                alert("Velden zijn gereset.");
+                document.querySelectorAll('#feedbackChecklist input').forEach(c => c.checked = false);
+                alert("Alles is gereset.");
             }
         };
     </script>
@@ -106,15 +111,9 @@
             c.width = c.offsetWidth; c.height = 180;
             let draw = false; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#002d5e';
             const getP = (e) => { const r = c.getBoundingClientRect(); return { x: (e.touches?.[0].clientX || e.clientX) - r.left, y: (e.touches?.[0].clientY || e.clientY) - r.top }; };
-            
             c.onmousedown = (e) => { draw=true; ctx.beginPath(); const p=getP(e); ctx.moveTo(p.x, p.y); };
             c.onmousemove = (e) => { if(!draw) return; const p=getP(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
-            
-            window['clear_'+id] = () => { 
-                ctx.clearRect(0,0,c.width,c.height); 
-                ctx.beginPath(); // Cruciaal voor herstart na gummen
-            };
-
+            window['clear_'+id] = () => { ctx.clearRect(0,0,c.width,c.height); ctx.beginPath(); };
             const stop = async () => { if(!draw) return; draw=false; };
             window.addEventListener('mouseup', stop);
             c.addEventListener('touchstart', (e) => { draw=true; ctx.beginPath(); const p=getP(e); ctx.moveTo(p.x, p.y); e.preventDefault(); }, {passive:false});
@@ -132,10 +131,7 @@
     <div id="loginOverlay" class="fixed inset-0 bg-police z-50 flex items-center justify-center p-4">
         <div class="bg-white p-8 rounded shadow-2xl w-full max-w-lg border-t-8 border-yellow-500">
             <h1 class="font-black text-2xl mb-4 text-police italic uppercase">Instructie</h1>
-            <p class="text-sm text-slate-600 mb-6 leading-relaxed">
-                Welkom bij deze BTV-les. Het is de bedoeling dat je alle onderdelen van boven naar beneden doorloopt. 
-                Log in met je <b>voornaam</b> en kies de juiste <b>eenheid</b> om de live-koppeling te activeren.
-            </p>
+            <p class="text-sm text-slate-600 mb-6">Log in met je <b>voornaam</b> en kies de juiste <b>eenheid</b>.</p>
             <input type="text" id="uNaam" placeholder="Jouw Voornaam" class="w-full border-2 p-4 rounded-lg mb-4 font-bold outline-none focus:border-police text-center">
             <select id="uKlas" class="w-full border-2 p-4 rounded-lg mb-8 font-bold outline-none focus:border-police text-center">
                 <option value="">-- Kies Eenheid --</option>
@@ -149,7 +145,7 @@
         
         <header class="flex justify-between items-center bg-police text-white p-5 rounded-2xl shadow-xl">
             <div class="font-black italic uppercase">Eenheid: <span id="displayKlas" class="text-yellow-400"></span></div>
-            <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-[10px] uppercase">Reset Alle Tekst</button>
+            <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-[10px] uppercase">Reset Alle Velden</button>
         </header>
 
         <section class="space-y-6">
@@ -196,15 +192,14 @@
                             </div>`));
                     </script>
                 </div>
-                <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 p-4 rounded-xl text-sm h-[350px] outline-none focus:border-police" placeholder="Denk aan de ik-vorm..."></textarea>
+                <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 p-4 rounded-xl text-sm h-[350px] outline-none focus:border-police" placeholder="Schrijf hier de actieve ik-zinnen..."></textarea>
             </div>
         </section>
 
         <section class="bg-red-700 text-white p-6 rounded-2xl shadow-xl border-l-8 border-yellow-500">
-            <h2 class="font-black uppercase text-xs mb-3 text-yellow-400">Deel 4: Melding OC</h2>
-            <p class="font-mono text-sm italic leading-relaxed">
-                “Tijdens jullie surveillance krijgen jullie de volgende melding van het Operationeel Centrum (OC): 
-                Wilt u gaan naar kruising Vincent van Goghweg met de Westzijde in Zaandam. Hier is een motorrijder gevallen. 
+            <h2 class="font-black uppercase text-xs mb-3 text-yellow-400 underline">Deel 4: Melding OC</h2>
+            <p class="font-mono text-sm italic leading-relaxed text-white">
+                “Wilt u gaan naar kruising Vincent van Goghweg met de Westzijde in Zaandam. Hier is een motorrijder gevallen. 
                 Het slachtoffer is aanspreekbaar en heeft mogelijk letsel. De ambulance is onderweg en u heeft toestemming.”
             </p>
         </section>
@@ -212,39 +207,38 @@
         <section class="bg-yellow-50 border-4 border-yellow-400 p-6 rounded-2xl shadow-lg">
             <h2 class="font-black uppercase text-sm mb-4 text-yellow-900 italic text-center underline">Deel 5: Stel uw DAA op</h2>
             <textarea id="daaInput" class="w-full border-2 border-yellow-200 p-5 rounded-xl text-sm h-40 shadow-inner" placeholder="Doel - Aanpak - Analyse..."></textarea>
-            <button onclick="sendData('DAA', 'daaInput')" class="w-full bg-yellow-600 text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md">Check & Verstuur DAA</button>
+            <button onclick="sendData('DAA', 'daaInput')" class="w-full bg-yellow-600 text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md">Verstuur DAA naar Livefeed</button>
         </section>
 
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
-            <h2 class="font-black uppercase text-xs mb-4 text-police">Deel 6: Ter Plaatse</h2>
+            <h2 class="font-black uppercase text-xs mb-4 text-police underline">Deel 6: Ter Plaatse</h2>
             <p class="text-sm italic leading-relaxed mb-6 text-slate-700">
                 Op de kruising zie je een motorfiets liggen en een stukje verderop een persoon in een motorpak en een helm op. 
-                Om de persoon staan een aantal mensen die eerste hulp verlenen. Jullie splitsen op. 
-                Een van jullie gaat direct naar het slachtoffer. De man is aanspreekbaar en geeft aan dat hij onderuit is gegleden in de bocht, 
-                terwijl hij ongeveer 50 km/u reed. Terwijl hij vertelt dat hij last heeft van zijn rug en buik zie je dat hij wegzakt en buiten bewustzijn raakt.
+                Het slachtoffer geeft aan dat hij onderuit is gegleden in de bocht terwijl hij ongeveer 50 km/u reed.
             </p>
             <div class="grid grid-cols-3 gap-4">
-                <div class="text-center"><img src="bord50.png" alt="Bord 50" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold">bord50.png</span></div>
-                <div class="text-center"><img src="kruispuntgooglemaps.png" alt="Maps" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold">kruispuntgooglemaps.png</span></div>
-                <div class="text-center"><img src="overzichtkruispunt.png" alt="Overzicht" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold">overzichtkruispunt.png</span></div>
+                <div class="text-center"><img src="bord50.png" alt="Bord 50" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">bord50.png</span></div>
+                <div class="text-center"><img src="kruispuntgooglemaps.png" alt="Maps" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">maps.png</span></div>
+                <div class="text-center"><img src="overzichtkruispunt.png" alt="Overzicht" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">kruispunt.png</span></div>
             </div>
         </section>
 
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
-            <h2 class="font-black uppercase text-sm mb-4 text-police italic">Deel 7: PV Bevindingen</h2>
+            <h2 class="font-black uppercase text-sm mb-4 text-police italic underline">Deel 7: PV Bevindingen</h2>
             <textarea id="pvInput" class="w-full border-2 p-5 rounded-xl text-sm h-60" placeholder="Stel hier je PV van bevindingen op..."></textarea>
-            <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-police text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md">Check & Verstuur PV</button>
+            <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-police text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md italic">Verstuur PV naar Livefeed</button>
         </section>
 
         <section class="bg-slate-100 p-6 rounded-2xl border-2 border-slate-300 shadow-inner">
-            <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic border-b pb-2">Deel 8: Feedback (Kruis aan voor livefeed)</h2>
-            <div class="space-y-4" id="feedbackChecklist">
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border"><input type="checkbox" value="Dienstvoertuig Positie"> Hoe positioneer je je dienstvoertuig?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border"><input type="checkbox" value="Veiligheid Ter Plaatse"> Welke eerste veiligheidsmaatregelen neem je?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border"><input type="checkbox" value="METHANE"> METHANE-methode terugmelding?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border"><input type="checkbox" value="Strafbaar Feit"> Welk strafbaar feit is hier sprake?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border"><input type="checkbox" value="Partners"> Welke partners inschakelen?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border"><input type="checkbox" value="Opsporing"> Welke opsporingsactiviteiten?</label>
+            <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic border-b pb-2 text-center">Deel 8: Feedback Checklist</h2>
+            <p class="text-[10px] text-slate-500 mb-4 uppercase text-center font-bold italic">Vink aan wat je hebt behandeld in je DAA of PV</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="feedbackChecklist">
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Dienstvoertuig Positie"> Hoe positioneer je je dienstvoertuig?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Veiligheid Ter Plaatse"> Welke veiligheidsmaatregelen neem je?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="METHANE"> METHANE-methode terugmelding?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Strafbaar Feit"> Welk strafbaar feit is hier sprake?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Partners"> Welke partners inschakelen?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Opsporing"> Welke opsporingsactiviteiten?</label>
             </div>
         </section>
 

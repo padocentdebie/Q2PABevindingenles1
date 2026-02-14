@@ -8,12 +8,11 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBRq1HFmhrpW_EMMZwpURrbTArz-L5iWT4",
             authDomain: "pvaangifteinleveren-77dbe.firebaseapp.com",
-            databaseURL: "https://pvaangifteinleveren-77dbe-default-rtdb.europe-west1.firebasedatabase.app",
             projectId: "pvaangifteinleveren-77dbe",
             storageBucket: "pvaangifteinleveren-77dbe.firebasestorage.app",
             messagingSenderId: "20239054410",
@@ -23,169 +22,137 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // --- WHITEBOARD FUNCTIES ---
-        window.sendToBoard = async (inputId, collectionName) => {
-            const input = document.getElementById(inputId);
-            const tekst = input.value.trim();
-            const klas = document.getElementById('klas').value || "DOCENT";
-            if(!tekst) return;
+        // --- CANVAS COLLABORATIE LOGICA ---
+        function setupWhiteboard(canvasId, docName) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            let drawing = false;
 
-            await addDoc(collection(db, collectionName), { tekst, klas, timestamp: serverTimestamp() });
-            input.value = "";
-        };
+            // Formaat fix voor schermen
+            canvas.width = canvas.offsetWidth;
+            canvas.height = 250;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#002d5e';
 
-        // Reset functie voor de docent (verwijdert whiteboard items)
-        window.resetBoard = async (collectionName) => {
-            if(!confirm("Weet je zeker dat je dit bord wilt leegmaken?")) return;
-            const q = query(collection(db, collectionName));
-            const snapshot = await getDocs(q);
-            const batch = writeBatch(db);
-            snapshot.forEach((d) => batch.delete(d.ref));
-            await batch.commit();
-        };
+            const getPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: clientX - rect.left, y: clientY - rect.top };
+            };
 
-        // Live Listeners voor Whiteboards
-        onSnapshot(query(collection(db, "whiteboard_redenen"), orderBy("timestamp", "desc")), (s) => {
-            const d = document.getElementById('displayRedenen'); d.innerHTML = "";
-            s.forEach(doc => { const data = doc.data(); d.innerHTML += `<div class="bg-yellow-100 p-3 shadow border-l-4 border-yellow-500 m-1 text-sm italic animate-in">"${data.tekst}" <span class="block text-[8px] font-bold text-blue-900 mt-1 uppercase">${data.klas}</span></div>`; });
-        });
-
-        onSnapshot(query(collection(db, "whiteboard_filmisch"), orderBy("timestamp", "desc")), (s) => {
-            const d = document.getElementById('displayFilmisch'); d.innerHTML = "";
-            s.forEach(doc => { const data = doc.data(); d.innerHTML += `<div class="bg-blue-50 p-3 shadow border-l-4 border-blue-900 m-1 text-sm font-bold text-blue-900 animate-in">"${data.tekst}" <span class="block text-[8px] font-bold text-gray-400 mt-1 uppercase">${data.klas}</span></div>`; });
-        });
-
-        // --- KLASSEN & FEEDBACK ---
-        window.laadKlas = (gekozenKlas) => {
-            document.getElementById('currentKlas').innerText = gekozenKlas;
-            const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas), orderBy("timestamp", "desc"));
+            const start = (e) => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); e.preventDefault(); };
+            const move = (e) => { if(!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); };
             
-            onSnapshot(q, (snapshot) => {
-                const lijst = document.getElementById('feedbackLijst');
-                let html = "";
-                snapshot.forEach(docSnap => {
-                    const d = docSnap.data();
-                    const id = docSnap.id;
-                    const criteria = ["Positionering", "Veiligheid", "DAA Correct", "Strafbaar feit", "Ik-vorm"];
-                    let fbHtml = "";
-                    criteria.forEach((label, i) => {
-                        const checked = d[`fb_${i}`] ? "checked" : "";
-                        fbHtml += `<label class="flex items-center space-x-2 bg-gray-100 p-2 rounded border border-gray-200 cursor-pointer active:bg-blue-200">
-                            <input type="checkbox" ${checked} onchange="window.updateFeedback('${id}', ${i}, this.checked)" class="h-4 w-4">
-                            <span class="text-[9px] font-black uppercase text-gray-600">${label}</span>
-                        </label>`;
-                    });
+            const stop = async () => { 
+                if(!drawing) return; 
+                drawing = false; 
+                // Compressie naar 0.5 om Firebase licht te houden
+                const dataUrl = canvas.toDataURL('image/webp', 0.5); 
+                await setDoc(doc(db, "whiteboards", docName), { image: dataUrl, timestamp: serverTimestamp() });
+            };
 
-                    html += `<div class="bg-white border-2 border-blue-900 p-5 mb-6 shadow-lg animate-in rounded-lg">
-                        <div class="flex justify-between border-b pb-2 mb-4">
-                            <span class="text-[10px] font-black text-blue-900 uppercase">VBL: ${d.student}</span>
-                            <span class="text-[9px] text-gray-400 uppercase">Partner: ${d.partner || '-'}</span>
-                        </div>
-                        <p class="text-[10px] font-bold text-gray-400 uppercase mb-1 italic">Proces-verbaal:</p>
-                        <div class="text-md font-serif leading-relaxed text-gray-900 bg-blue-50/20 p-4 border-l-4 border-blue-900 mb-4">${d.pv}</div>
-                        <div class="pt-4 border-t">
-                            <div class="grid grid-cols-2 md:grid-cols-5 gap-2">${fbHtml}</div>
-                        </div>
-                    </div>`;
-                });
-                lijst.innerHTML = html || "<p class='text-gray-400 text-xs font-bold'>KLAS IS LEEG</p>";
+            canvas.addEventListener('mousedown', start);
+            canvas.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', stop);
+            canvas.addEventListener('touchstart', start, {passive: false});
+            canvas.addEventListener('touchmove', move, {passive: false});
+            canvas.addEventListener('touchend', stop);
+
+            // Real-time update van andere gebruikers
+            onSnapshot(doc(db, "whiteboards", docName), (snapshot) => {
+                if (snapshot.exists() && !drawing) {
+                    const img = new Image();
+                    img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0); };
+                    img.src = snapshot.data().image;
+                }
             });
+        }
+
+        // Reset functie: Maakt bord leeg voor iedereen
+        window.resetBoard = async (docName, canvasId) => {
+            if(!confirm("Weet je zeker dat je dit bord wilt wissen voor iedereen?")) return;
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/webp', 0.1);
+            await setDoc(doc(db, "whiteboards", docName), { image: dataUrl, timestamp: serverTimestamp() });
         };
 
-        window.updateFeedback = async (id, i, val) => {
-            await updateDoc(doc(db, "casus_inzendingen", id), { [`fb_${i}`]: val });
+        window.onload = () => {
+            setupWhiteboard('canvasRedenen', 'redenen');
+            setupWhiteboard('canvasFilmisch', 'filmisch');
         };
 
+        // --- OVERIGE FUNCTIES (PV INLEVEREN) ---
         window.submitCasus = async () => {
             const naam = document.getElementById('naam').value;
             const klas = document.getElementById('klas').value;
             const pv = document.getElementById('pvText').value;
-            if(!naam || !klas || !pv) return alert("Naam, Klas en PV zijn verplicht!");
-            await addDoc(collection(db, "casus_inzendingen"), { 
-                student: naam, partner: document.getElementById('partnerInput').value, 
-                klas, daa: document.getElementById('daaText').value, pv, timestamp: serverTimestamp() 
-            });
+            if(!naam || !klas || !pv) return alert("Vul alles in!");
+            await addDoc(collection(db, "casus_inzendingen"), { student: naam, klas, pv, timestamp: serverTimestamp() });
             alert("Ingeleverd!");
         };
 
-        // Tellers
-        ['Delta', 'Echo', 'Foxtrot', 'Mike', 'Lima'].forEach(k => {
-            onSnapshot(query(collection(db, "casus_inzendingen"), where("klas", "==", k)), (snap) => {
-                const el = document.getElementById(`count-${k}`);
-                if(el) el.innerText = snap.size;
+        window.laadKlas = (gekozenKlas) => {
+            document.getElementById('currentKlas').innerText = gekozenKlas;
+            const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas), orderBy("timestamp", "desc"));
+            onSnapshot(q, (s) => {
+                const lijst = document.getElementById('feedbackLijst');
+                let h = "";
+                s.forEach(docSnap => {
+                    const d = docSnap.data();
+                    h += `<div class="bg-white border-2 border-blue-900 p-4 mb-4 rounded shadow">
+                        <p class="text-[10px] font-black text-blue-900 uppercase">Student: ${d.student}</p>
+                        <div class="mt-2 text-sm font-serif border-l-4 border-blue-900 pl-3">${d.pv}</div>
+                    </div>`;
+                });
+                lijst.innerHTML = h || "<p class='text-gray-400'>Nog geen inzendingen.</p>";
             });
-        });
+        };
     </script>
 
     <style>
         .police-blue { background-color: #002d5e; }
-        .animate-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        input, select, textarea { font-size: 16px !important; }
+        canvas { touch-action: none; cursor: crosshair; }
     </style>
 </head>
-<body class="bg-gray-100 p-2 md:p-8 font-sans">
+<body class="bg-gray-100 p-2 md:p-8">
     <div class="max-w-4xl mx-auto">
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-            <section class="bg-white border-2 border-blue-900 p-4 shadow-md text-left relative">
-                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-4">Waarnemingen (Wetenschap)</h2>
-                <div class="flex gap-2">
-                    <input type="text" id="inputRedenen" placeholder="Ik zag..." class="flex-1 border-b-2 p-3 text-sm outline-none bg-gray-50 focus:bg-white">
-                    <button onclick="sendToBoard('inputRedenen', 'whiteboard_redenen')" class="police-blue text-white px-4 rounded font-bold text-[10px] uppercase">Plaatsen</button>
-                </div>
-                <div id="displayRedenen" class="mt-4 max-h-48 overflow-y-auto bg-slate-50 p-2 min-h-[100px]"></div>
-                <button onclick="resetBoard('whiteboard_redenen')" class="absolute top-2 right-2 text-[8px] text-gray-300 hover:text-red-500 uppercase">Reset</button>
+            <section class="bg-white border-2 border-blue-900 p-4 shadow-md relative">
+                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-2 text-left">Waarnemingen (Tekenen)</h2>
+                <canvas id="canvasRedenen" class="w-full bg-yellow-50 border border-yellow-200 rounded touch-none"></canvas>
+                <button onclick="resetBoard('redenen', 'canvasRedenen')" class="absolute top-2 right-2 bg-red-500 text-white text-[8px] px-2 py-1 rounded font-bold uppercase hover:bg-red-700">Reset Bord</button>
             </section>
 
-            <section class="bg-white border-2 border-blue-900 p-4 shadow-md text-left relative">
-                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-4">Filmische Zinnen (Ik-vorm)</h2>
-                <div class="flex gap-2">
-                    <input type="text" id="inputFilmisch" placeholder="Typ live mee..." class="flex-1 border-b-2 p-3 text-sm outline-none bg-gray-50 focus:bg-white">
-                    <button onclick="sendToBoard('inputFilmisch', 'whiteboard_filmisch')" class="bg-blue-900 text-white px-4 rounded font-bold text-[10px] uppercase">Plaatsen</button>
-                </div>
-                <div id="displayFilmisch" class="mt-4 max-h-48 overflow-y-auto bg-blue-50/30 p-2 min-h-[100px]"></div>
-                <button onclick="resetBoard('whiteboard_filmisch')" class="absolute top-2 right-2 text-[8px] text-gray-300 hover:text-red-500 uppercase">Reset</button>
+            <section class="bg-white border-2 border-blue-900 p-4 shadow-md relative">
+                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-2 text-left">Filmische Zinnen (Tekenen)</h2>
+                <canvas id="canvasFilmisch" class="w-full bg-blue-50 border border-blue-100 rounded touch-none"></canvas>
+                <button onclick="resetBoard('filmisch', 'canvasFilmisch')" class="absolute top-2 right-2 bg-red-500 text-white text-[8px] px-2 py-1 rounded font-bold uppercase hover:bg-red-700">Reset Bord</button>
             </section>
         </div>
 
-        <section class="bg-blue-900 text-white p-6 mb-8 shadow-xl rounded-lg border-l-8 border-yellow-400 text-left">
-            <h2 class="text-[11px] font-black uppercase tracking-widest mb-4 text-yellow-400">Training Actieve Ik-Vorm</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">1. Afslag werd gemist.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">2. Man werd gefouilleerd.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">3. Controle werd verloren.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">4. Verdachte werd staande gehouden.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">5. Portier werd geopend.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">6. Er werd geroepen.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">7. Test werd afgenomen.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">8. Mes werd gevonden.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">9. Snelheid werd gemeten.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">10. Slachtoffer werd geholpen.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
-            </div>
-        </section>
-
-        <section class="bg-white p-6 border shadow-md mb-8 text-left">
+        <section class="bg-white p-6 border shadow-md mb-8">
             <div class="grid grid-cols-2 gap-4 mb-4">
                 <input type="text" id="naam" placeholder="Naam" class="border p-3 text-sm bg-gray-50 rounded">
                 <select id="klas" class="border p-3 text-sm font-bold rounded">
                     <option value="">Kies klas...</option><option>Delta</option><option>Echo</option><option>Foxtrot</option><option>Mike</option><option>Lima</option>
                 </select>
             </div>
-            <textarea id="pvText" placeholder="Jouw PV in de IK-vorm..." class="w-full border p-4 text-sm h-48 mb-4 rounded bg-gray-50 focus:bg-white outline-none"></textarea>
-            <button onclick="submitCasus()" class="w-full police-blue text-white font-black py-4 uppercase text-xs rounded shadow-lg">Definitief Inleveren</button>
+            <textarea id="pvText" placeholder="Jouw PV in de IK-vorm..." class="w-full border p-4 text-sm h-48 mb-4 rounded bg-gray-50 outline-none"></textarea>
+            <button onclick="submitCasus()" class="w-full police-blue text-white font-black py-4 uppercase text-xs rounded">Definitief Inleveren</button>
         </section>
 
-        <div class="flex flex-wrap justify-center gap-2 mb-8">
-            <button onclick="laadKlas('Delta')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">DELTA (<span id="count-Delta">0</span>)</button>
-            <button onclick="laadKlas('Echo')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">ECHO (<span id="count-Echo">0</span>)</button>
-            <button onclick="laadKlas('Foxtrot')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">FOXTROT (<span id="count-Foxtrot">0</span>)</button>
-            <button onclick="laadKlas('Mike')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">MIKE (<span id="count-Mike">0</span>)</button>
-            <button onclick="laadKlas('Lima')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">LIMA (<span id="count-Lima">0</span>)</button>
+        <div class="flex flex-wrap justify-center gap-2 mb-4">
+            <button onclick="laadKlas('Delta')" class="police-blue text-white px-3 py-2 rounded text-[10px] font-bold">DELTA</button>
+            <button onclick="laadKlas('Echo')" class="police-blue text-white px-3 py-2 rounded text-[10px] font-bold">ECHO</button>
+            <button onclick="laadKlas('Foxtrot')" class="police-blue text-white px-3 py-2 rounded text-[10px] font-bold">FOXTROT</button>
         </div>
-        
-        <h3 class="text-[10px] font-black text-gray-400 uppercase mb-4 text-center tracking-widest">Klas: <span id="currentKlas" class="text-blue-900">-</span></h3>
-        <div id="feedbackLijst" class="pb-32"></div>
+        <h3 class="text-center font-black text-blue-900 uppercase text-[10px] mb-4">Klas: <span id="currentKlas">-</span></h3>
+        <div id="feedbackLijst" class="pb-20"></div>
     </div>
 </body>
 </html>

@@ -1,14 +1,203 @@
-<div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 shadow-sm">
-    <div class="flex">
-        <div class="flex-shrink-0">
-            <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-            </svg>
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PV Training Master - 2026 LIVE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBRq1HFmhrpW_EMMZwpURrbTArz-L5iWT4",
+            authDomain: "pvaangifteinleveren-77dbe.firebaseapp.com",
+            projectId: "pvaangifteinleveren-77dbe",
+            storageBucket: "pvaangifteinleveren-77dbe.firebasestorage.app",
+            messagingSenderId: "20239054410",
+            appId: "1:20239054410:web:264b3c759312248d9f18b3"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // --- LIVE WHITEBOARDS ---
+        function setupWhiteboard(canvasId, docName) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            let drawing = false;
+
+            canvas.width = canvas.offsetWidth;
+            canvas.height = 250;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = docName === 'redenen' ? '#002d5e' : '#1e3a8a';
+
+            const getPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: clientX - rect.left, y: clientY - rect.top };
+            };
+
+            canvas.addEventListener('mousedown', (e) => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); });
+            canvas.addEventListener('mousemove', (e) => { if(!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
+            const stopDrawing = async () => { 
+                if(!drawing) return; drawing = false; 
+                const dataUrl = canvas.toDataURL('image/webp', 0.5); 
+                await setDoc(doc(db, "whiteboards", docName), { image: dataUrl, timestamp: serverTimestamp() });
+            };
+            window.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('touchstart', (e) => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); e.preventDefault(); }, {passive: false});
+            canvas.addEventListener('touchmove', (e) => { if(!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); }, {passive: false});
+            canvas.addEventListener('touchend', stopDrawing);
+
+            onSnapshot(doc(db, "whiteboards", docName), (snap) => {
+                if (snap.exists() && !drawing) {
+                    const img = new Image();
+                    img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0); };
+                    img.src = snap.data().image;
+                }
+            });
+        }
+
+        window.resetBoard = async (docName, canvasId) => {
+            if(!confirm("Bord wissen voor iedereen?")) return;
+            const canvas = document.getElementById(canvasId);
+            canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            await setDoc(doc(db, "whiteboards", docName), { image: canvas.toDataURL('image/webp', 0.1), timestamp: serverTimestamp() });
+        };
+
+        // --- LIVE FEEDBACK & INZENDINGEN ---
+        window.updateFeedback = async (id, field, val) => {
+            await updateDoc(doc(db, "casus_inzendingen", id), { [field]: val });
+        };
+
+        window.laadKlas = (gekozenKlas) => {
+            // UI feedback op knoppen
+            document.querySelectorAll('.klas-btn').forEach(btn => {
+                btn.classList.replace('bg-yellow-400', 'police-blue');
+                btn.classList.remove('text-blue-900');
+            });
+            const activeBtn = document.getElementById(`btn-${gekozenKlas}`);
+            if(activeBtn) {
+                activeBtn.classList.replace('police-blue', 'bg-yellow-400');
+                activeBtn.classList.add('text-blue-900');
+            }
+
+            document.getElementById('currentKlas').innerText = gekozenKlas;
+            const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas), orderBy("timestamp", "desc"));
+            
+            onSnapshot(q, (snapshot) => {
+                const lijst = document.getElementById('feedbackLijst');
+                let html = "";
+                snapshot.forEach(docSnap => {
+                    const d = docSnap.data();
+                    const id = docSnap.id;
+                    const criteria = ["Positionering", "Veiligheid", "DAA Correct", "Strafbaar feit", "Ik-vorm"];
+                    let fbHtml = "";
+                    
+                    criteria.forEach((label, i) => {
+                        const fieldName = `fb_${i}`;
+                        const checked = d[fieldName] ? "checked" : "";
+                        fbHtml += `
+                            <label class="flex items-center space-x-2 bg-gray-50 p-2 rounded border cursor-pointer hover:bg-blue-100 transition">
+                                <input type="checkbox" ${checked} onchange="window.updateFeedback('${id}', '${fieldName}', this.checked)" class="h-4 w-4">
+                                <span class="text-[9px] font-bold uppercase text-gray-600">${label}</span>
+                            </label>`;
+                    });
+
+                    html += `
+                        <div class="bg-white border-2 border-blue-900 p-5 mb-6 shadow-lg rounded-lg animate-fade-in">
+                            <div class="flex justify-between border-b pb-2 mb-4">
+                                <span class="text-[10px] font-black text-blue-900 uppercase">VBL: ${d.student}</span>
+                                <span class="text-[9px] text-gray-400 uppercase">${d.timestamp ? new Date(d.timestamp.toDate()).toLocaleTimeString() : '...'}</span>
+                            </div>
+                            <div class="text-md font-serif leading-relaxed text-gray-900 bg-blue-50/30 p-4 border-l-4 border-blue-900 mb-4 whitespace-pre-wrap">${d.pv}</div>
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 pt-2 border-t">${fbHtml}</div>
+                        </div>`;
+                });
+                lijst.innerHTML = html || "<p class='text-center text-gray-400 font-bold uppercase text-xs py-10'>Geen PV's in deze klas</p>";
+            });
+        };
+
+        window.submitCasus = async () => {
+            const naam = document.getElementById('naam').value;
+            const klas = document.getElementById('klas').value;
+            const pv = document.getElementById('pvText').value;
+            if(!naam || !klas || !pv) return alert("Naam, Klas en PV zijn verplicht!");
+            await addDoc(collection(db, "casus_inzendingen"), { 
+                student: naam, klas, pv, timestamp: serverTimestamp(),
+                fb_0: false, fb_1: false, fb_2: false, fb_3: false, fb_4: false 
+            });
+            document.getElementById('pvText').value = "";
+            alert("PV Succesvol ingeleverd!");
+        };
+
+        window.onload = () => {
+            setupWhiteboard('canvasRedenen', 'redenen');
+            setupWhiteboard('canvasFilmisch', 'filmisch');
+            
+            ['Delta', 'Echo', 'Foxtrot', 'Mike', 'Lima'].forEach(k => {
+                onSnapshot(query(collection(db, "casus_inzendingen"), where("klas", "==", k)), (snap) => {
+                    const el = document.getElementById(`count-${k}`);
+                    if(el) el.innerText = snap.size;
+                });
+            });
+        };
+    </script>
+
+    <style>
+        .police-blue { background-color: #002d5e; }
+        canvas { touch-action: none; cursor: crosshair; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+    </style>
+</head>
+<body class="bg-gray-100 p-2 md:p-6 font-sans">
+    <div class="max-w-5xl mx-auto">
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="bg-white border-2 border-blue-900 p-3 shadow relative">
+                <h3 class="text-[9px] font-black text-blue-900 uppercase mb-2 text-left">Waarnemingen (Live)</h3>
+                <canvas id="canvasRedenen" class="w-full bg-yellow-50 rounded border border-yellow-100"></canvas>
+                <button onclick="resetBoard('redenen', 'canvasRedenen')" class="absolute top-2 right-2 text-[8px] bg-red-500 text-white px-2 py-1 rounded uppercase font-bold">Wissen</button>
+            </div>
+            <div class="bg-white border-2 border-blue-900 p-3 shadow relative">
+                <h3 class="text-[9px] font-black text-blue-900 uppercase mb-2 text-left">Filmische Zinnen (Live)</h3>
+                <canvas id="canvasFilmisch" class="w-full bg-blue-50 rounded border border-blue-100"></canvas>
+                <button onclick="resetBoard('filmisch', 'canvasFilmisch')" class="absolute top-2 right-2 text-[8px] bg-red-500 text-white px-2 py-1 rounded uppercase font-bold">Wissen</button>
+            </div>
         </div>
-        <div class="ml-3">
-            <p class="text-xs text-yellow-700 font-bold uppercase tracking-wider">
-                Instructie: Selecteer hieronder een klas om de ingeleverde PV's en live feedback te bekijken.
+
+        <section class="bg-white p-5 border-2 border-blue-900 shadow mb-6">
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <input type="text" id="naam" placeholder="Naam Student" class="border p-3 text-sm bg-gray-50 rounded outline-none">
+                <select id="klas" class="border p-3 text-sm font-bold rounded bg-gray-50 outline-none">
+                    <option value="">Kies klas...</option><option>Delta</option><option>Echo</option><option>Foxtrot</option><option>Mike</option><option>Lima</option>
+                </select>
+            </div>
+            <textarea id="pvText" placeholder="Schrijf hier je proces-verbaal..." class="w-full border p-4 text-sm h-40 mb-4 rounded bg-gray-50 outline-none"></textarea>
+            <button onclick="submitCasus()" class="w-full police-blue text-white font-black py-4 uppercase text-xs rounded">Definitief Inleveren</button>
+        </section>
+
+        <div class="bg-blue-50 border-l-4 border-blue-900 p-4 mb-6 shadow-sm">
+            <p class="text-[10px] text-blue-900 font-black uppercase tracking-widest">
+                ℹ️ Klik op een klasnaam hieronder om de teksten en feedback live te bekijken.
             </p>
         </div>
+
+        <div class="flex flex-wrap justify-center gap-2 mb-6">
+            <button onclick="laadKlas('Delta')" id="btn-Delta" class="klas-btn police-blue text-white px-4 py-3 rounded font-bold text-[10px] flex items-center gap-2 transition-all shadow-md">DELTA <span id="count-Delta" class="bg-white text-blue-900 px-2 rounded-full">0</span></button>
+            <button onclick="laadKlas('Echo')" id="btn-Echo" class="klas-btn police-blue text-white px-4 py-3 rounded font-bold text-[10px] flex items-center gap-2 transition-all shadow-md">ECHO <span id="count-Echo" class="bg-white text-blue-900 px-2 rounded-full">0</span></button>
+            <button onclick="laadKlas('Foxtrot')" id="btn-Foxtrot" class="klas-btn police-blue text-white px-4 py-3 rounded font-bold text-[10px] flex items-center gap-2 transition-all shadow-md">FOXTROT <span id="count-Foxtrot" class="bg-white text-blue-900 px-2 rounded-full">0</span></button>
+            <button onclick="laadKlas('Mike')" id="btn-Mike" class="klas-btn police-blue text-white px-4 py-3 rounded font-bold text-[10px] flex items-center gap-2 transition-all shadow-md">MIKE <span id="count-Mike" class="bg-white text-blue-900 px-2 rounded-full">0</span></button>
+            <button onclick="laadKlas('Lima')" id="btn-Lima" class="klas-btn police-blue text-white px-4 py-3 rounded font-bold text-[10px] flex items-center gap-2 transition-all shadow-md">LIMA <span id="count-Lima" class="bg-white text-blue-900 px-2 rounded-full">0</span></button>
+        </div>
+
+        <h3 class="text-center text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-6">Live Feed Klas: <span id="currentKlas" class="text-blue-900">-</span></h3>
+        <div id="feedbackLijst" class="pb-24"></div>
     </div>
-</div>
+</body>
+</html>

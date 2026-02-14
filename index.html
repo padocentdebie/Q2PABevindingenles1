@@ -2,13 +2,13 @@
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Module PV Bevindingen - Volledig Geoptimaliseerd</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PV Training Master - 2026</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBRq1HFmhrpW_EMMZwpURrbTArz-L5iWT4",
@@ -23,50 +23,39 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // --- LIVE BORDEN FUNCTIES ---
+        // --- WHITEBOARD FUNCTIES ---
         window.sendToBoard = async (inputId, collectionName) => {
             const input = document.getElementById(inputId);
             const tekst = input.value.trim();
-            // Pak klas van selectie, of gebruik 'Docent' als er geen klas geselecteerd is
-            const klasEl = document.getElementById('klas');
-            const klas = (klasEl && klasEl.value) ? klasEl.value : "DOCENT";
-            
+            const klas = document.getElementById('klas').value || "DOCENT";
             if(!tekst) return;
-            try {
-                await addDoc(collection(db, collectionName), { tekst, klas, timestamp: serverTimestamp() });
-                input.value = "";
-            } catch (e) { console.error("Fout bij plaatsen:", e); }
+
+            await addDoc(collection(db, collectionName), { tekst, klas, timestamp: serverTimestamp() });
+            input.value = "";
         };
 
-        // Listeners voor Whiteboards
+        // Reset functie voor de docent (verwijdert whiteboard items)
+        window.resetBoard = async (collectionName) => {
+            if(!confirm("Weet je zeker dat je dit bord wilt leegmaken?")) return;
+            const q = query(collection(db, collectionName));
+            const snapshot = await getDocs(q);
+            const batch = writeBatch(db);
+            snapshot.forEach((d) => batch.delete(d.ref));
+            await batch.commit();
+        };
+
+        // Live Listeners voor Whiteboards
         onSnapshot(query(collection(db, "whiteboard_redenen"), orderBy("timestamp", "desc")), (s) => {
             const d = document.getElementById('displayRedenen'); d.innerHTML = "";
-            s.forEach(doc => { const data = doc.data(); d.innerHTML += `<div class="bg-yellow-100 p-2 shadow border-l-4 border-yellow-400 m-1 text-[11px] font-serif italic text-gray-800 animate-in">"${data.tekst}"<br><span class="text-[7px] font-bold text-blue-900 uppercase">${data.klas}</span></div>`; });
+            s.forEach(doc => { const data = doc.data(); d.innerHTML += `<div class="bg-yellow-100 p-3 shadow border-l-4 border-yellow-500 m-1 text-sm italic animate-in">"${data.tekst}" <span class="block text-[8px] font-bold text-blue-900 mt-1 uppercase">${data.klas}</span></div>`; });
         });
 
         onSnapshot(query(collection(db, "whiteboard_filmisch"), orderBy("timestamp", "desc")), (s) => {
             const d = document.getElementById('displayFilmisch'); d.innerHTML = "";
-            s.forEach(doc => { const data = doc.data(); d.innerHTML += `<div class="bg-blue-50 p-2 shadow border-l-4 border-blue-900 m-1 text-[11px] font-serif font-bold text-blue-900 animate-in">"${data.tekst}"<br><span class="text-[7px] font-bold text-gray-400 uppercase">${data.klas}</span></div>`; });
+            s.forEach(doc => { const data = doc.data(); d.innerHTML += `<div class="bg-blue-50 p-3 shadow border-l-4 border-blue-900 m-1 text-sm font-bold text-blue-900 animate-in">"${data.tekst}" <span class="block text-[8px] font-bold text-gray-400 mt-1 uppercase">${data.klas}</span></div>`; });
         });
 
-        // --- TRAINING CHECK ---
-        window.checkTraining = () => {
-            const inputs = document.querySelectorAll('.oefening-input');
-            let correct = 0;
-            const verboden = ["werd", "worden", "is", "zijn", "was", "door", "wij", "we"];
-            inputs.forEach(input => {
-                const val = input.value.toLowerCase().trim();
-                if (val.startsWith("ik ") && !verboden.some(v => val.includes(v)) && val.length > 5) {
-                    input.className = "oefening-input w-full bg-blue-900 border-b-2 border-green-500 p-1 text-xs text-white outline-none";
-                    correct++;
-                } else {
-                    input.className = "oefening-input w-full bg-blue-950 border-b-2 border-red-500 p-1 text-xs text-white outline-none";
-                }
-            });
-            document.getElementById('trainingFeedback').innerText = correct === 10 ? "✅ 10/10: Perfect in de ik-vorm!" : `⚠️ ${correct}/10 goed.`;
-        };
-
-        // --- INZENDINGEN EN FEEDBACK ---
+        // --- KLASSEN & FEEDBACK ---
         window.laadKlas = (gekozenKlas) => {
             document.getElementById('currentKlas').innerText = gekozenKlas;
             const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas), orderBy("timestamp", "desc"));
@@ -77,38 +66,29 @@
                 snapshot.forEach(docSnap => {
                     const d = docSnap.data();
                     const id = docSnap.id;
-                    
-                    // Feedback Criteria blok
-                    const criteria = ["Positionering", "Veiligheid", "DAA Correct", "Strafbaar feit", "Ik-vorm gebruikt"];
+                    const criteria = ["Positionering", "Veiligheid", "DAA Correct", "Strafbaar feit", "Ik-vorm"];
                     let fbHtml = "";
                     criteria.forEach((label, i) => {
                         const checked = d[`fb_${i}`] ? "checked" : "";
-                        fbHtml += `<label class="flex items-center space-x-2 bg-gray-50 p-1 rounded border border-gray-100 cursor-pointer hover:bg-white">
-                            <input type="checkbox" ${checked} onchange="window.updateFeedback('${id}', ${i}, this.checked)" class="h-3 w-3 accent-blue-900">
-                            <span class="text-[9px] uppercase font-bold text-gray-600">${label}</span>
+                        fbHtml += `<label class="flex items-center space-x-2 bg-gray-100 p-2 rounded border border-gray-200 cursor-pointer active:bg-blue-200">
+                            <input type="checkbox" ${checked} onchange="window.updateFeedback('${id}', ${i}, this.checked)" class="h-4 w-4">
+                            <span class="text-[9px] font-black uppercase text-gray-600">${label}</span>
                         </label>`;
                     });
 
-                    html += `<div class="bg-white border-2 border-gray-200 p-6 mb-8 text-left shadow-md animate-in">
+                    html += `<div class="bg-white border-2 border-blue-900 p-5 mb-6 shadow-lg animate-in rounded-lg">
                         <div class="flex justify-between border-b pb-2 mb-4">
-                            <span class="text-[10px] font-black text-blue-900 uppercase">Verbalisant: ${d.student}</span>
-                            <span class="text-[9px] text-gray-400">Partner(s): ${d.partner || 'Geen'}</span>
+                            <span class="text-[10px] font-black text-blue-900 uppercase">VBL: ${d.student}</span>
+                            <span class="text-[9px] text-gray-400 uppercase">Partner: ${d.partner || '-'}</span>
                         </div>
-                        <div class="mb-4">
-                            <h4 class="text-[8px] font-bold text-gray-400 uppercase mb-1">DAA Analyse:</h4>
-                            <p class="text-sm text-gray-700 leading-relaxed bg-slate-50 p-2 rounded">${d.daa}</p>
-                        </div>
-                        <div class="mb-6">
-                            <h4 class="text-[8px] font-bold text-gray-400 uppercase mb-1">Proces-verbaal:</h4>
-                            <p class="text-md font-serif leading-relaxed text-black border-l-4 border-blue-900 pl-4 py-2 bg-blue-50/20">${d.pv}</p>
-                        </div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase mb-1 italic">Proces-verbaal:</p>
+                        <div class="text-md font-serif leading-relaxed text-gray-900 bg-blue-50/20 p-4 border-l-4 border-blue-900 mb-4">${d.pv}</div>
                         <div class="pt-4 border-t">
-                            <p class="text-[9px] font-black text-blue-900 uppercase mb-2">Beoordeling / Peer Feedback:</p>
                             <div class="grid grid-cols-2 md:grid-cols-5 gap-2">${fbHtml}</div>
                         </div>
                     </div>`;
                 });
-                lijst.innerHTML = html || "<p class='text-xs text-gray-400 font-bold'>Wachten op inzendingen...</p>";
+                lijst.innerHTML = html || "<p class='text-gray-400 text-xs font-bold'>KLAS IS LEEG</p>";
             });
         };
 
@@ -119,17 +99,16 @@
         window.submitCasus = async () => {
             const naam = document.getElementById('naam').value;
             const klas = document.getElementById('klas').value;
-            const daa = document.getElementById('daaText').value;
             const pv = document.getElementById('pvText').value;
-            if(!naam || !daa || !pv) return alert("Vul a.u.b. alle velden in.");
-            
+            if(!naam || !klas || !pv) return alert("Naam, Klas en PV zijn verplicht!");
             await addDoc(collection(db, "casus_inzendingen"), { 
-                student: naam, partner: document.getElementById('partnerInput').value, klas, daa, pv, timestamp: serverTimestamp() 
+                student: naam, partner: document.getElementById('partnerInput').value, 
+                klas, daa: document.getElementById('daaText').value, pv, timestamp: serverTimestamp() 
             });
-            alert("Uw PV is succesvol ingeleverd!");
+            alert("Ingeleverd!");
         };
 
-        // Tellers initialiseren
+        // Tellers
         ['Delta', 'Echo', 'Foxtrot', 'Mike', 'Lima'].forEach(k => {
             onSnapshot(query(collection(db, "casus_inzendingen"), where("klas", "==", k)), (snap) => {
                 const el = document.getElementById(`count-${k}`);
@@ -140,80 +119,73 @@
 
     <style>
         .police-blue { background-color: #002d5e; }
-        .animate-in { animation: fadeIn 0.4s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        input, select, textarea { font-size: 16px !important; }
     </style>
 </head>
-<body class="bg-gray-100 p-4 md:p-8 font-sans text-gray-900">
+<body class="bg-gray-100 p-2 md:p-8 font-sans">
     <div class="max-w-4xl mx-auto">
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-            <section class="bg-white border-2 border-blue-900 p-4 shadow-md text-left">
-                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-4 tracking-widest">1. Waarnemingen (Wetenschap)</h2>
-                <div class="flex gap-1">
-                    <input type="text" id="inputRedenen" onkeypress="if(event.key==='Enter') sendToBoard('inputRedenen', 'whiteboard_redenen')" placeholder="Ik zag/hoorde/rook..." class="flex-1 border-b p-1 text-xs outline-none bg-gray-50 focus:bg-white">
-                    <button onclick="sendToBoard('inputRedenen', 'whiteboard_redenen')" class="police-blue text-white px-3 py-1 text-[9px] font-bold uppercase">Plaatsen</button>
+            <section class="bg-white border-2 border-blue-900 p-4 shadow-md text-left relative">
+                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-4">Waarnemingen (Wetenschap)</h2>
+                <div class="flex gap-2">
+                    <input type="text" id="inputRedenen" placeholder="Ik zag..." class="flex-1 border-b-2 p-3 text-sm outline-none bg-gray-50 focus:bg-white">
+                    <button onclick="sendToBoard('inputRedenen', 'whiteboard_redenen')" class="police-blue text-white px-4 rounded font-bold text-[10px] uppercase">Plaatsen</button>
                 </div>
-                <div id="displayRedenen" class="grid grid-cols-2 gap-1 mt-4 max-h-48 overflow-y-auto min-h-[120px] bg-slate-50 p-2"></div>
+                <div id="displayRedenen" class="mt-4 max-h-48 overflow-y-auto bg-slate-50 p-2 min-h-[100px]"></div>
+                <button onclick="resetBoard('whiteboard_redenen')" class="absolute top-2 right-2 text-[8px] text-gray-300 hover:text-red-500 uppercase">Reset</button>
             </section>
 
-            <section class="bg-white border-2 border-blue-900 p-4 shadow-md text-left">
-                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-4 tracking-widest">2. Filmische Zinnen (Ik-vorm)</h2>
-                <div class="flex gap-1">
-                    <input type="text" id="inputFilmisch" onkeypress="if(event.key==='Enter') sendToBoard('inputFilmisch', 'whiteboard_filmisch')" placeholder="Typ een actieve zin..." class="flex-1 border-b p-1 text-xs outline-none bg-gray-50 focus:bg-white">
-                    <button onclick="sendToBoard('inputFilmisch', 'whiteboard_filmisch')" class="bg-blue-900 text-white px-3 py-1 text-[9px] font-bold uppercase">Plaatsen</button>
+            <section class="bg-white border-2 border-blue-900 p-4 shadow-md text-left relative">
+                <h2 class="text-[10px] font-black text-blue-900 uppercase mb-4">Filmische Zinnen (Ik-vorm)</h2>
+                <div class="flex gap-2">
+                    <input type="text" id="inputFilmisch" placeholder="Typ live mee..." class="flex-1 border-b-2 p-3 text-sm outline-none bg-gray-50 focus:bg-white">
+                    <button onclick="sendToBoard('inputFilmisch', 'whiteboard_filmisch')" class="bg-blue-900 text-white px-4 rounded font-bold text-[10px] uppercase">Plaatsen</button>
                 </div>
-                <div id="displayFilmisch" class="grid grid-cols-2 gap-1 mt-4 max-h-48 overflow-y-auto min-h-[120px] bg-blue-50/30 p-2"></div>
+                <div id="displayFilmisch" class="mt-4 max-h-48 overflow-y-auto bg-blue-50/30 p-2 min-h-[100px]"></div>
+                <button onclick="resetBoard('whiteboard_filmisch')" class="absolute top-2 right-2 text-[8px] text-gray-300 hover:text-red-500 uppercase">Reset</button>
             </section>
         </div>
 
-        <section class="bg-blue-900 text-white p-6 mb-8 shadow-lg border-l-8 border-yellow-400 text-left">
-            <h2 class="text-[11px] font-black uppercase tracking-widest mb-4 text-yellow-400">Training: Actieve Ik-Vorm</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-                <div class="p-2 bg-blue-800/40 rounded">
-                    <p class="text-[9px] text-blue-200 mb-1">1. De afslag werd door mij gemist.</p>
-                    <input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none">
-                </div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">2. De man werd door mij gefouilleerd.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">3. De controle werd door mij verloren.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">4. De verdachte werd door mij staande gehouden.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">5. Het portier werd door mij geopend.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">6. Er werd door mij om assistentie geroepen.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">7. De alcoholtest werd door mij afgenomen.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">8. Het mes werd door mij gevonden.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">9. De snelheid werd door mij gemeten.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1">10. Het slachtoffer werd door mij begeleid.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-1 text-xs outline-none"></div>
-            </div>
-            <div class="mt-4">
-                <button onclick="checkTraining()" class="bg-yellow-400 text-blue-900 px-6 py-2 text-[10px] font-black uppercase">Check Zinnen</button>
-                <span id="trainingFeedback" class="ml-4 text-[10px] font-bold"></span>
+        <section class="bg-blue-900 text-white p-6 mb-8 shadow-xl rounded-lg border-l-8 border-yellow-400 text-left">
+            <h2 class="text-[11px] font-black uppercase tracking-widest mb-4 text-yellow-400">Training Actieve Ik-Vorm</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">1. Afslag werd gemist.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">2. Man werd gefouilleerd.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">3. Controle werd verloren.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">4. Verdachte werd staande gehouden.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">5. Portier werd geopend.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">6. Er werd geroepen.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">7. Test werd afgenomen.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">8. Mes werd gevonden.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">9. Snelheid werd gemeten.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
+                <div class="p-2 bg-blue-800/40 rounded"><p class="text-[9px] text-blue-200 mb-1 italic">10. Slachtoffer werd geholpen.</p><input type="text" placeholder="Denk aan de ik-vorm" class="oefening-input w-full bg-blue-950 border-b border-yellow-400 p-2 text-xs outline-none"></div>
             </div>
         </section>
 
-        <section class="bg-white p-6 border shadow-sm mb-12 text-left">
+        <section class="bg-white p-6 border shadow-md mb-8 text-left">
             <div class="grid grid-cols-2 gap-4 mb-4">
-                <input type="text" id="naam" placeholder="Naam Student" class="border p-2 text-sm outline-none bg-gray-50 focus:bg-white">
-                <select id="klas" class="border p-2 text-sm outline-none font-bold bg-gray-50">
-                    <option value="">Selecteer Klas</option>
-                    <option>Delta</option><option>Echo</option><option>Foxtrot</option><option>Mike</option><option>Lima</option>
+                <input type="text" id="naam" placeholder="Naam" class="border p-3 text-sm bg-gray-50 rounded">
+                <select id="klas" class="border p-3 text-sm font-bold rounded">
+                    <option value="">Kies klas...</option><option>Delta</option><option>Echo</option><option>Foxtrot</option><option>Mike</option><option>Lima</option>
                 </select>
             </div>
-            <input type="text" id="partnerInput" placeholder="Partner(s) DAA" class="w-full border p-2 text-sm mb-4 outline-none bg-gray-50 focus:bg-white">
-            <textarea id="daaText" placeholder="DAA Analyse..." class="w-full border p-3 text-sm h-24 mb-4 outline-none focus:bg-white"></textarea>
-            <textarea id="pvText" placeholder="Schrijf hier je Proces-verbaal (Ik-vorm!)..." class="w-full border p-3 text-sm h-48 mb-4 outline-none focus:bg-white"></textarea>
-            <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-3 uppercase text-xs">Inleveren Casus</button>
+            <textarea id="pvText" placeholder="Jouw PV in de IK-vorm..." class="w-full border p-4 text-sm h-48 mb-4 rounded bg-gray-50 focus:bg-white outline-none"></textarea>
+            <button onclick="submitCasus()" class="w-full police-blue text-white font-black py-4 uppercase text-xs rounded shadow-lg">Definitief Inleveren</button>
         </section>
 
         <div class="flex flex-wrap justify-center gap-2 mb-8">
-            <button onclick="laadKlas('Delta')" class="police-blue text-white px-3 py-2 text-[10px] font-bold min-w-[100px]">Delta (<span id="count-Delta">0</span>)</button>
-            <button onclick="laadKlas('Echo')" class="police-blue text-white px-3 py-2 text-[10px] font-bold min-w-[100px]">Echo (<span id="count-Echo">0</span>)</button>
-            <button onclick="laadKlas('Foxtrot')" class="police-blue text-white px-3 py-2 text-[10px] font-bold min-w-[100px]">Foxtrot (<span id="count-Foxtrot">0</span>)</button>
-            <button onclick="laadKlas('Mike')" class="police-blue text-white px-3 py-2 text-[10px] font-bold min-w-[100px]">Mike (<span id="count-Mike">0</span>)</button>
-            <button onclick="laadKlas('Lima')" class="police-blue text-white px-3 py-2 text-[10px] font-bold min-w-[100px]">Lima (<span id="count-Lima">0</span>)</button>
+            <button onclick="laadKlas('Delta')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">DELTA (<span id="count-Delta">0</span>)</button>
+            <button onclick="laadKlas('Echo')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">ECHO (<span id="count-Echo">0</span>)</button>
+            <button onclick="laadKlas('Foxtrot')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">FOXTROT (<span id="count-Foxtrot">0</span>)</button>
+            <button onclick="laadKlas('Mike')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">MIKE (<span id="count-Mike">0</span>)</button>
+            <button onclick="laadKlas('Lima')" class="police-blue text-white px-4 py-3 rounded font-bold text-[10px]">LIMA (<span id="count-Lima">0</span>)</button>
         </div>
         
-        <h3 class="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest text-center">Inzendingen van klas: <span id="currentKlas" class="text-blue-900">-</span></h3>
-        <div id="feedbackLijst" class="pb-20"></div>
+        <h3 class="text-[10px] font-black text-gray-400 uppercase mb-4 text-center tracking-widest">Klas: <span id="currentKlas" class="text-blue-900">-</span></h3>
+        <div id="feedbackLijst" class="pb-32"></div>
     </div>
 </body>
 </html>

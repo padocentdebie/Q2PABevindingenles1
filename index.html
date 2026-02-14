@@ -24,7 +24,7 @@
         const db = getFirestore(app);
 
         window.onload = () => {
-            alert("VEILIGHEIDSMELDING: U betreedt een beveiligde werkomgeving. Ga vertrouwelijk om met de gegevens van medestudenten en de casuïstiek.");
+            alert("VEILIGHEIDSMELDING: U betreedt een beveiligde werkomgeving. Ga vertrouwelijk om met de gegevens van medestudenten.");
         };
 
         async function wijsPartnerToe() {
@@ -45,7 +45,7 @@
                     partnerDisplay.innerText = partner;
                     document.getElementById('hiddenPartner').value = partner;
                 } else {
-                    partnerDisplay.innerText = "Geen klasgenoten online";
+                    partnerDisplay.innerText = "Wacht op klasgenoten...";
                 }
             } catch (e) { console.error(e); }
         }
@@ -56,13 +56,13 @@
             const partner = document.getElementById('hiddenPartner').value;
             const daa = document.getElementById('daaText').value;
             const pv = document.getElementById('pvText').value;
-            if(!naam || !daa || !pv) return alert("FOUT: Alle velden zijn verplicht.");
-            if(confirm("Bevestig: U staat op het punt uw DAA en PV definitief in te leveren.")) {
+            if(!naam || !daa || !pv) return alert("FOUT: Naam, DAA en PV zijn verplicht.");
+            if(confirm("Bevestig: U staat op het punt uw werk definitief in te leveren.")) {
                 try {
                     await addDoc(collection(db, "casus_inzendingen"), {
                         student: naam, partner, klas, daa, pv, timestamp: serverTimestamp()
                     });
-                    alert("Systeemmelding: Inzending succesvol opgeslagen.");
+                    alert("Inzending succesvol opgeslagen.");
                     location.reload();
                 } catch (e) { console.error(e); }
             }
@@ -82,7 +82,7 @@
             const snap = await getDocs(q);
             lijst.innerHTML = "";
             if(snap.empty) {
-                lijst.innerHTML = "<p class='text-center p-4 text-gray-500'>Geen inzendingen gevonden voor deze klas.</p>";
+                lijst.innerHTML = "<p class='text-center p-4 text-gray-500'>Geen inzendingen gevonden.</p>";
                 return;
             }
             snap.forEach(docSnap => {
@@ -98,30 +98,28 @@
                 lijst.innerHTML += `
                     <div class="bg-white border-2 p-8 mb-8 shadow-sm text-left print-section">
                         <div class="flex justify-between border-b pb-2 mb-6 bg-gray-50 px-2 py-1 print:bg-white">
-                            <span class="font-bold text-blue-900 uppercase text-xs print:text-sm">Auteur: ${d.student}</span>
-                            <span class="text-[10px] text-gray-500 italic uppercase print:text-sm">Partner: ${d.partner || 'N.V.T.'}</span>
+                            <span class="font-bold text-blue-900 uppercase text-xs">Auteur: ${d.student}</span>
+                            <span class="text-[10px] text-gray-500 italic uppercase">Collega voor DAA: ${d.partner || 'N.V.T.'}</span>
                         </div>
                         <div class="mb-8">
                             <h4 class="text-[10px] font-bold uppercase text-gray-400 mb-2">Doel Aanpak Analyse (DAA)</h4>
-                            <div class="text-sm whitespace-pre-wrap text-gray-800 leading-relaxed font-serif print:text-base print:text-black">${d.daa}</div>
+                            <div class="text-sm whitespace-pre-wrap text-gray-800 font-serif print:text-base">${d.daa}</div>
                         </div>
                         <div class="mb-8">
                             <h4 class="text-[10px] font-bold uppercase text-gray-400 mb-2">Proces-verbaal van Bevindingen</h4>
-                            <div class="text-sm whitespace-pre-wrap text-gray-800 leading-relaxed font-serif print:text-base print:text-black">${d.pv}</div>
+                            <div class="text-sm whitespace-pre-wrap text-gray-800 font-serif print:text-base">${d.pv}</div>
                         </div>
                         <div class="bg-slate-50 p-4 border rounded text-[11px] no-print mb-4">
-                            <p class="font-bold mb-2 uppercase text-blue-900">Peer Feedback Aandachtspunten:</p>
+                            <p class="font-bold mb-2 uppercase text-blue-900">Peer Feedback:</p>
                             <div class="grid grid-cols-2 gap-1">${feedbackHtml}</div>
                         </div>
-                        <div class="flex gap-4 no-print">
-                            <button onclick="window.print()" class="bg-blue-900 text-white px-4 py-2 text-[10px] font-bold uppercase hover:bg-black transition">Exporteer als PV</button>
-                        </div>
+                        <button onclick="window.print()" class="no-print bg-blue-900 text-white px-4 py-2 text-[10px] font-bold uppercase hover:bg-black transition">Exporteer als PV</button>
                     </div>`;
             });
         }
 
         async function resetKlas(gekozenKlas) {
-            if(!confirm(`AUTORISATIE: Wilt u alle data van klas ${gekozenKlas} definitief wissen?`)) return;
+            if(!confirm(`Data van klas ${gekozenKlas} wissen?`)) return;
             const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
             const snap = await getDocs(q);
             const promises = snap.docs.map(d => deleteDoc(doc(db, "casus_inzendingen", d.id)));
@@ -137,46 +135,46 @@
         .police-blue { background-color: #002d5e; }
         .police-border { border-color: #002d5e; }
         .text-police { color: #002d5e; }
-        
         @media print {
-            body { background-color: white !important; padding: 0 !important; }
-            .no-print, header, .oc-box, button, select, input, label { display: none !important; }
-            .print-section { 
-                border: none !important; 
-                box-shadow: none !important; 
-                margin: 0 !important; 
-                padding: 2cm !important; 
-                page-break-after: always;
-                width: 100% !important;
-            }
-            .max-w-4xl { max-width: 100% !important; }
+            .no-print { display: none !important; }
+            .print-section { border: none !important; padding: 2cm !important; page-break-after: always; width: 100% !important; }
             h4 { color: black !important; font-size: 10pt !important; border-bottom: 1px solid #ccc; margin-bottom: 10pt; }
         }
     </style>
 </head>
-<body class="p-4 md:p-12">
+<body class="p-4 md:p-12 text-left">
 
     <div class="max-w-4xl mx-auto">
         <header class="no-print">
             <h1 class="text-center text-xl font-bold uppercase tracking-[0.2em] text-police mb-10">Q2les1PVBevindingen</h1>
 
-            <div class="bg-white border-y-4 police-border p-8 mb-12 text-center shadow-sm oc-box">
+            <div class="bg-slate-800 text-white p-6 mb-1 rounded-t-lg shadow-md border-b-4 border-blue-500">
+                <h3 class="text-xs font-bold uppercase tracking-widest mb-3 text-blue-300">Instructie Oefenmodule</h3>
+                <ul class="text-[11px] space-y-2 list-disc list-inside text-gray-200">
+                    <li>Vul eerst uw <span class="text-white font-bold underline">Naam</span> en <span class="text-white font-bold underline">Klasgroep</span> in onderaan dit scherm.</li>
+                    <li>Gebruik de knop <span class="text-white font-bold italic">"Koppel Collega"</span> om een medestudent te selecteren voor peer-feedback.</li>
+                    <li>Bestudeer de OC-melding en werk de <span class="text-white font-bold">DAA</span> en het <span class="text-white font-bold">PV</span> uit.</li>
+                    <li>Na inleveren kunt u resultaten bekijken en feedback geven op werk van klasgenoten.</li>
+                </ul>
+            </div>
+
+            <div class="bg-white border-b-4 police-border p-8 mb-12 text-center shadow-sm">
                 <h2 class="text-[10px] font-black uppercase text-blue-900 mb-3 tracking-widest">Bericht Operationeel Centrum</h2>
-                <p class="italic text-lg text-gray-700 leading-relaxed mb-6">
+                <p class="italic text-lg text-gray-700 leading-relaxed mb-6 text-center">
                     “Wilt u gaan naar kruising Vincent van Goghweg met de Westzijde, 1506 GC Zaandam. Hier is een motorrijder gevallen. Het slachtoffer is aanspreekbaar en heeft mogelijk letsel. De ambulance is onderweg en u heeft toestemming.”
                 </p>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 border-t pt-8">
-                    <div class="space-y-1">
-                        <img src="Screenshot%202026-02-14%2008.16.11.png" alt="A1" class="w-full h-32 object-contain bg-gray-50 border rounded">
-                        <p class="text-[8px] uppercase text-gray-400">RVV A1 (50km/h)</p>
+                    <div class="space-y-1 text-center">
+                        <img src="Screenshot%202026-02-14%2008.16.11.png" alt="A1" class="mx-auto w-full h-32 object-contain bg-gray-50 border rounded">
+                        <p class="text-[8px] uppercase text-gray-400 font-bold">RVV A1 (50km/h)</p>
                     </div>
-                    <div class="space-y-1">
-                        <img src="Screenshot%202026-02-14%2008.15.53.png" alt="Streetview" class="w-full h-32 object-cover bg-gray-50 border rounded">
-                        <p class="text-[8px] uppercase text-gray-400">Streetview</p>
+                    <div class="space-y-1 text-center">
+                        <img src="Screenshot%202026-02-14%2008.15.53.png" alt="Streetview" class="mx-auto w-full h-32 object-cover bg-gray-50 border rounded">
+                        <p class="text-[8px] uppercase text-gray-400 font-bold">Streetview</p>
                     </div>
-                    <div class="space-y-1">
-                        <img src="Screenshot%202026-02-14%2008.15.26.png" alt="Maps Overzicht" class="w-full h-32 object-cover bg-gray-50 border rounded">
-                        <p class="text-[8px] uppercase text-gray-400">Maps Overzicht</p>
+                    <div class="space-y-1 text-center">
+                        <img src="Screenshot%202026-02-14%2008.15.26.png" alt="Maps Overzicht" class="mx-auto w-full h-32 object-cover bg-gray-50 border rounded">
+                        <p class="text-[8px] uppercase text-gray-400 font-bold">Maps Overzicht</p>
                     </div>
                 </div>
             </div>
@@ -184,11 +182,11 @@
             <div class="bg-white p-8 border border-gray-200 shadow-sm mb-16">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <div>
-                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400 text-left">Naam Student</label>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400">Naam Student</label>
                         <input type="text" id="naam" placeholder="Voornaam Student" class="w-full border p-2 text-sm outline-none focus:border-blue-900 bg-gray-50">
                     </div>
                     <div>
-                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400 text-left">Klasgroep (Nato)</label>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400">Klasgroep</label>
                         <select id="klas" class="w-full border p-2 text-sm outline-none focus:border-blue-900 bg-gray-50">
                             <option value="Delta">Delta</option><option value="Echo">Echo</option><option value="Foxtrot">Foxtrot</option><option value="Mike">Mike</option><option value="Lima">Lima</option>
                         </select>
@@ -196,12 +194,12 @@
                 </div>
 
                 <div class="bg-slate-100 p-3 border-l-4 border-blue-900 mb-8 flex justify-between items-center text-xs">
-                    <span>Gekoppelde collega voor DAA: <span id="partnerDisplay" class="font-bold text-blue-900">-</span></span>
+                    <span>Collega voor DAA: <span id="partnerDisplay" class="font-bold text-blue-900">-</span></span>
                     <button onclick="wijsPartnerToe()" class="police-blue text-white px-4 py-1 uppercase text-[10px] font-bold hover:bg-blue-800 transition">Koppel Collega</button>
                     <input type="hidden" id="hiddenPartner">
                 </div>
 
-                <div class="space-y-6 text-left">
+                <div class="space-y-6">
                     <div>
                         <label class="block text-[10px] font-bold uppercase mb-1 text-police">1. Doel Aanpak Analyse (DAA)</label>
                         <textarea id="daaText" rows="4" class="w-full border p-3 text-sm outline-none focus:bg-white bg-gray-50 transition-all"></textarea>
@@ -218,26 +216,11 @@
         <div class="border-t-2 border-gray-200 pt-10 no-print">
             <h2 class="text-center font-bold uppercase text-xs tracking-widest mb-8 text-police">Peer Feedback & Resultaten</h2>
             <div class="flex flex-wrap justify-center gap-4 mb-12">
-                <div class="text-center space-y-1">
-                    <button onclick="laadKlas('Delta')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">DELTA</button>
-                    <button onclick="resetKlas('Delta')" class="block mx-auto text-[7px] text-red-400 font-bold uppercase">Reset</button>
-                </div>
-                <div class="text-center space-y-1">
-                    <button onclick="laadKlas('Echo')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">ECHO</button>
-                    <button onclick="resetKlas('Echo')" class="block mx-auto text-[7px] text-red-400 font-bold uppercase">Reset</button>
-                </div>
-                <div class="text-center space-y-1">
-                    <button onclick="laadKlas('Foxtrot')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">FOXTROT</button>
-                    <button onclick="resetKlas('Foxtrot')" class="block mx-auto text-[7px] text-red-400 font-bold uppercase">Reset</button>
-                </div>
-                <div class="text-center space-y-1">
-                    <button onclick="laadKlas('Mike')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">MIKE</button>
-                    <button onclick="resetKlas('Mike')" class="block mx-auto text-[7px] text-red-400 font-bold uppercase">Reset</button>
-                </div>
-                <div class="text-center space-y-1">
-                    <button onclick="laadKlas('Lima')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">LIMA</button>
-                    <button onclick="resetKlas('Lima')" class="block mx-auto text-[7px] text-red-400 font-bold uppercase">Reset</button>
-                </div>
+                <button onclick="laadKlas('Delta')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">DELTA</button>
+                <button onclick="laadKlas('Echo')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">ECHO</button>
+                <button onclick="laadKlas('Foxtrot')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">FOXTROT</button>
+                <button onclick="laadKlas('Mike')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">MIKE</button>
+                <button onclick="laadKlas('Lima')" class="w-20 border border-blue-900 py-1 text-[9px] font-bold hover:bg-blue-50">LIMA</button>
             </div>
         </div>
         

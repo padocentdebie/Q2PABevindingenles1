@@ -23,6 +23,17 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        // Update de nummers in de knoppen
+        async function updateTellers() {
+            const klassen = ['Delta', 'Echo', 'Foxtrot', 'Mike', 'Lima'];
+            for (const klas of klassen) {
+                const q = query(collection(db, "casus_inzendingen"), where("klas", "==", klas));
+                const snap = await getDocs(q);
+                const tellerElement = document.getElementById(`count-${klas}`);
+                if (tellerElement) tellerElement.innerText = snap.size;
+            }
+        }
+
         async function submitCasus() {
             const naam = document.getElementById('naam').value.trim();
             const klas = document.getElementById('klas').value;
@@ -53,7 +64,6 @@
             } catch (e) { console.error(e); }
         };
 
-        // De reset-functie voor de docent
         window.resetKlas = async () => {
             const gekozenKlas = document.getElementById('currentKlas').innerText;
             if (gekozenKlas === "-") return alert("Kies eerst een klas om te resetten.");
@@ -66,8 +76,8 @@
                     deletePromises.push(deleteDoc(doc(db, "casus_inzendingen", docSnap.id)));
                 });
                 await Promise.all(deletePromises);
-                alert("Klas " + gekozenKlas + " is succesvol gereset.");
-                window.laadKlas(gekozenKlas);
+                alert("Klas " + gekozenKlas + " is gereset.");
+                location.reload();
             }
         };
 
@@ -79,10 +89,10 @@
             try {
                 const q = query(collection(db, "casus_inzendingen"), where("klas", "==", gekozenKlas));
                 const snap = await getDocs(q);
-                let htmlContent = ""; // Verzamel eerst alle HTML om dubbele weergave te voorkomen
+                let htmlContent = "";
                 
                 if(snap.empty) {
-                    lijst.innerHTML = "<p class='text-xs text-gray-500 font-bold'>Geen inzendingen gevonden.</p>";
+                    lijst.innerHTML = "<p class='text-xs text-gray-500 font-bold uppercase'>Geen inzendingen gevonden.</p>";
                     return;
                 }
 
@@ -122,6 +132,7 @@
         };
 
         window.submitCasus = submitCasus;
+        window.onload = updateTellers;
     </script>
 
     <style>
@@ -133,7 +144,7 @@
     <div class="max-w-4xl mx-auto">
         
         <header class="bg-slate-800 text-white p-6 mb-8 rounded shadow border-b-4 border-blue-500">
-            <h3 class="text-xs font-bold uppercase tracking-widest mb-2 text-blue-300">Instructie Oefenmodule</h3>
+            <h3 class="text-xs font-bold uppercase tracking-widest mb-2 text-blue-300 text-left">Instructie Oefenmodule</h3>
             <ul class="text-[11px] space-y-1 list-disc list-inside text-gray-300 text-left">
                 <li>Vul uw <strong>Naam</strong> in en selecteer uw <strong>Klas</strong>.</li>
                 <li>Noteer uw <strong>Partner(s)</strong> voor de DAA.</li>
@@ -152,53 +163,67 @@
                 </div>
                 <div class="text-center">
                     <img src="overzichtkruispunt.png" class="h-28 mx-auto object-cover border rounded shadow-sm">
-                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">zicht vanaf westzijde</p>
+                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Luchtfoto kruising</p>
                 </div>
                 <div class="text-center">
                     <img src="kruispuntgooglemaps.png" class="h-28 mx-auto object-cover border rounded shadow-sm">
-                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">luchtfoto</p>
+                    <p class="text-[8px] mt-2 font-bold text-gray-400 uppercase">Zicht vanaf Westzijde</p>
                 </div>
              </div>
         </section>
 
         <section class="bg-white p-8 border border-gray-200 shadow-sm mb-12 text-left">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 text-left">
                 <div>
                     <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Naam Student</label>
-                    <input type="text" id="naam" placeholder="Uw voornaam" class="w-full border p-2 text-sm bg-gray-50 outline-none focus:border-blue-900">
+                    <input type="text" id="naam" placeholder="Uw voornaam" class="w-full border p-2 text-sm bg-gray-50 outline-none focus:border-blue-900 text-left">
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Klasgroep</label>
-                    <select id="klas" class="w-full border p-2 text-sm bg-gray-50 outline-none">
+                    <select id="klas" class="w-full border p-2 text-sm bg-gray-50 outline-none text-left">
                         <option value="Delta">Delta</option><option value="Echo">Echo</option><option value="Foxtrot">Foxtrot</option><option value="Mike">Mike</option><option value="Lima">Lima</option>
                     </select>
                 </div>
             </div>
             <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Partner(s) voor DAA</label>
-            <input type="text" id="partnerInput" placeholder="Namen medestudenten" class="w-full border p-2 text-sm bg-blue-50 outline-none focus:border-blue-900 mb-6 border-l-4 border-blue-900">
+            <input type="text" id="partnerInput" placeholder="Namen medestudenten" class="w-full border p-2 text-sm bg-blue-50 outline-none focus:border-blue-900 mb-6 border-l-4 border-blue-900 text-left">
             
-            <textarea id="daaText" placeholder="1. Doel Aanpak Analyse (DAA)..." class="w-full border p-4 text-sm h-32 bg-gray-50 focus:bg-white outline-none mb-4"></textarea>
-            <textarea id="pvText" placeholder="2. Proces-verbaal van Bevindingen..." class="w-full border p-4 text-sm h-56 bg-gray-50 focus:bg-white outline-none mb-4"></textarea>
+            <textarea id="daaText" placeholder="1. Doel Aanpak Analyse (DAA)..." class="w-full border p-4 text-sm h-32 bg-gray-50 focus:bg-white outline-none mb-4 text-left"></textarea>
+            <textarea id="pvText" placeholder="2. Proces-verbaal van Bevindingen..." class="w-full border p-4 text-sm h-56 bg-gray-50 focus:bg-white outline-none mb-4 text-left"></textarea>
             <button onclick="submitCasus()" class="w-full police-blue text-white font-bold py-4 uppercase tracking-widest text-sm hover:bg-black transition shadow-md">Definitief inleveren</button>
         </section>
 
         <section class="text-center pb-20 border-t pt-10">
             <h4 class="text-[10px] font-bold uppercase text-gray-400 mb-6 tracking-widest">Bekijk Feedback & Resultaten (<span id="currentKlas">-</span>)</h4>
-            <div class="flex flex-wrap justify-center gap-2 mb-10">
-                <button onclick="laadKlas('Delta')" class="border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-900 hover:text-white transition uppercase">Delta</button>
-                <button onclick="laadKlas('Echo')" class="border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-900 hover:text-white transition uppercase">Echo</button>
-                <button onclick="laadKlas('Foxtrot')" class="border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-900 hover:text-white transition uppercase">Foxtrot</button>
-                <button onclick="laadKlas('Mike')" class="border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-900 hover:text-white transition uppercase">Mike</button>
-                <button onclick="laadKlas('Lima')" class="border border-blue-900 px-4 py-1 text-[10px] font-bold hover:bg-blue-900 hover:text-white transition uppercase">Lima</button>
+            <div class="flex flex-wrap justify-center gap-4 mb-10">
+                <button onclick="laadKlas('Delta')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
+                    <span>Delta</span>
+                    <span id="count-Delta" class="text-[8px] opacity-70 mt-1">0</span>
+                </button>
+                <button onclick="laadKlas('Echo')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
+                    <span>Echo</span>
+                    <span id="count-Echo" class="text-[8px] opacity-70 mt-1">0</span>
+                </button>
+                <button onclick="laadKlas('Foxtrot')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
+                    <span>Foxtrot</span>
+                    <span id="count-Foxtrot" class="text-[8px] opacity-70 mt-1">0</span>
+                </button>
+                <button onclick="laadKlas('Mike')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
+                    <span>Mike</span>
+                    <span id="count-Mike" class="text-[8px] opacity-70 mt-1">0</span>
+                </button>
+                <button onclick="laadKlas('Lima')" class="police-blue text-white px-5 py-2 text-[10px] font-bold hover:bg-black transition uppercase rounded-sm flex flex-col items-center min-w-[80px]">
+                    <span>Lima</span>
+                    <span id="count-Lima" class="text-[8px] opacity-70 mt-1">0</span>
+                </button>
             </div>
             
             <div id="feedbackLijst" class="max-w-3xl mx-auto mb-10"></div>
 
             <div class="mt-20 pt-10 border-t border-red-100">
-                <button onclick="resetKlas()" class="text-[9px] font-bold text-red-400 border border-red-200 px-4 py-2 rounded hover:bg-red-600 hover:text-white transition">
-                    ⚠️ SYSTEEM RESET (DOCENT)
+                <button onclick="resetKlas()" class="text-[9px] font-bold text-red-400 border border-red-200 px-4 py-2 rounded hover:bg-red-600 hover:text-white transition uppercase">
+                    ⚠️ Systeem Reset (Docent)
                 </button>
-                <p class="text-[8px] text-gray-400 mt-2 uppercase italic">Hiermee verwijdert u alle inzendingen uit de geselecteerde klas.</p>
             </div>
         </section>
     </div>

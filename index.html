@@ -49,7 +49,7 @@
             const verboden = ["werd", "worden", "is", "zijn", "was", "door", "wij", "we"];
             inputs.forEach(input => {
                 const val = input.value.toLowerCase().trim();
-                const startsWithIk = val.startsWith("ik ");
+                const startsWithIk = val.startsWith("denk aan de ik-vorm ");
                 const hasForbidden = verboden.some(v => val.includes(v));
                 if (val.length > 5 && startsWithIk && !hasForbidden) {
                     input.className = "oefening-input w-full bg-blue-900 border-b-2 border-green-500 p-1 text-xs outline-none text-white";

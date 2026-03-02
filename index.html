@@ -6,6 +6,7 @@
     <title>BTV Dashboard - Zaandam 2026</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- Firebase wordt geladen als module, maar we maken startLes globaal -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -23,13 +24,14 @@
         const db = getFirestore(app);
         const LES_ID = "btv_zaandam_volledig";
 
-        // GLOBALE VARIABELEN
+        // GLOBALE VARIABELEN (aan window hangen)
         window.currentKlas = "";
         window.currentNaam = "";
         window.drawings = { c1: [], c2: [] };
-        window.activeCanvas = null;
+        window.db = db;
+        window.LES_ID = LES_ID;
 
-        // REAL-TIME WHITEBOARD - verbeterde versie
+        // REAL-TIME WHITEBOARD functie
         window.setupWhiteboardSync = async function(canvasId, boardKey, klas) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
@@ -45,10 +47,6 @@
 
             // Tekenvariabelen
             let drawing = false;
-            let lastX = 0;
-            let lastY = 0;
-            
-            // Huidige lijn opslaan
             let currentLine = [];
             
             const getCoordinates = (e) => {
@@ -92,7 +90,7 @@
             }
 
             // REAL-TIME LISTENER voor Firebase
-            const boardDocRef = doc(db, "whiteboards", `${LES_ID}_${boardKey}_${klas}`);
+            const boardDocRef = doc(window.db, "whiteboards", `${window.LES_ID}_${boardKey}_${klas}`);
             
             onSnapshot(boardDocRef, (snap) => {
                 if (snap.exists()) {
@@ -116,9 +114,6 @@
                 e.preventDefault();
                 drawing = true;
                 const coords = getCoordinates(e);
-                
-                lastX = coords.x;
-                lastY = coords.y;
                 
                 // Begin nieuwe lijn
                 currentLine = [{ x: coords.x, y: coords.y }];
@@ -149,7 +144,7 @@
                     }
                     window.drawings[canvasId].push([...currentLine]);
                     
-                    // Upload naar Firebase (zonder te wachten)
+                    // Upload naar Firebase
                     uploadToFirebase();
                 }
                 drawing = false;
@@ -195,43 +190,10 @@
             console.log(`Whiteboard ${canvasId} geïnitialiseerd voor klas ${klas}`);
         };
 
-        // LOGIN / START
-        window.startLes = function() {
-            const naam = document.getElementById('uNaam').value.trim();
-            const klas = document.getElementById('uKlas').value;
-            
-            if(!naam || !klas) {
-                alert("Vul voornaam en eenheid in.");
-                return;
-            }
-            
-            window.currentKlas = klas;
-            window.currentNaam = naam;
-            
-            // Reset drawings
-            window.drawings = { c1: [], c2: [] };
-            
-            // Verberg login, toon dashboard
-            document.getElementById('loginOverlay').style.display = 'none';
-            document.getElementById('mainContent').classList.remove('hidden');
-            document.getElementById('displayKlas').innerText = klas;
-            
-            // Init whiteboards na een korte pauze (zodat canvas geladen is)
-            setTimeout(() => {
-                window.setupWhiteboardSync('c1', 'bord1', klas);
-                window.setupWhiteboardSync('c2', 'bord2', klas);
-            }, 200);
-            
-            // Start livefeed
-            window.initLive(klas);
-            
-            console.log(`Ingelogd: ${naam} (${klas})`);
-        };
-
-        // LIVE FEED
+        // LIVE FEED functie
         window.initLive = async function(klas) {
             try {
-                const q = query(collection(db, "btv_2026"), where("klas", "==", klas), orderBy("ts", "desc"));
+                const q = query(collection(window.db, "btv_2026"), where("klas", "==", klas), orderBy("ts", "desc"));
                 
                 onSnapshot(q, (sn) => {
                     const feed = document.getElementById('liveFeed');
@@ -305,7 +267,7 @@
                 const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
                 const feedbackString = gekozen.join(", ");
                 
-                await addDoc(collection(db, "btv_2026"), { 
+                await addDoc(collection(window.db, "btv_2026"), { 
                     naam, 
                     klas, 
                     type, 
@@ -338,9 +300,45 @@
                 alert("Alles is gereset.");
             }
         };
+
+        // ===== DIT IS DE BELANGRIJKSTE FIX: startLes GLOBAAL MAKEN =====
+        window.startLes = function() {
+            const naam = document.getElementById('uNaam').value.trim();
+            const klas = document.getElementById('uKlas').value;
+            
+            if(!naam || !klas) {
+                alert("Vul voornaam en eenheid in.");
+                return;
+            }
+            
+            window.currentKlas = klas;
+            window.currentNaam = naam;
+            
+            // Reset drawings
+            window.drawings = { c1: [], c2: [] };
+            
+            // Verberg login, toon dashboard
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('mainContent').classList.remove('hidden');
+            document.getElementById('displayKlas').innerText = klas;
+            
+            // Init whiteboards na een korte pauze (zodat canvas geladen is)
+            setTimeout(() => {
+                window.setupWhiteboardSync('c1', 'bord1', klas);
+                window.setupWhiteboardSync('c2', 'bord2', klas);
+            }, 200);
+            
+            // Start livefeed
+            window.initLive(klas);
+            
+            console.log(`Ingelogd: ${naam} (${klas})`);
+        };
+
+        // Zorg dat startLes ook echt op window staat
+        console.log("startLes is beschikbaar:", window.startLes);
     </script>
 
-    <!-- AUTOMATISCHE CORRECTIE DEEL 3 -->
+    <!-- AUTOMATISCHE CORRECTIE DEEL 3 (gewone script, geen module) -->
     <script>
         const criteria = [
             ["ik legde", "zijligging"], ["ik zette", "kruising", "af"], ["ik riep", "ambulance"],
@@ -406,7 +404,8 @@
                 <option value="">-- Kies Eenheid --</option>
                 <option>Delta</option><option>Echo</option><option>Foxtrot</option><option>Kilo</option><option>Lima</option><option>Mike</option>
             </select>
-            <button onclick="startLes()" class="w-full bg-police text-white p-5 rounded-lg font-black uppercase tracking-widest hover:bg-blue-900 transition-all">Start Dashboard</button>
+            <!-- Deze knop roept window.startLes aan -->
+            <button onclick="window.startLes()" class="w-full bg-police text-white p-5 rounded-lg font-black uppercase tracking-widest hover:bg-blue-900 transition-all">Start Dashboard</button>
         </div>
     </div>
 

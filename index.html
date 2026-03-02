@@ -6,374 +6,374 @@
     <title>BTV Dashboard - Zaandam 2026</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <script type="module">
-        // --- JUISTE FIREBASE INITIALISATIE (MET NIEUWE CONFIG) ---
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getDatabase, ref, onValue, set, push, update, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-
-        // NIEUWE FIREBASE CONFIGURATIE (zoals opgegeven)
-        const firebaseConfig = {
-            apiKey: "AIzaSyCJ5of6K5MRFXMOiEqEyZxZbs1xoJtXuN8",
-            authDomain: "pvaangifteinleveren.firebaseapp.com",
-            databaseURL: "https://pvaangifteinleveren-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "pvaangifteinleveren",
-            storageBucket: "pvaangifteinleveren.firebasestorage.app",
-            messagingSenderId: "989190242332",
-            appId: "1:989190242332:web:867ea95845325cf9835fd9"
-        };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-
-        // Globale variabelen voor huidige gebruiker
-        let currentUser = { naam: '', klas: '' };
-
-        // --- VERBETERDE WHITEBOARD LOGICA ---
-        function setupWhiteboard(canvasId, docId) {
-            const canvas = document.getElementById(canvasId);
-            if (!canvas) return;
+    <!-- Firebase SDK via CDN (niet-module versie voor betere compatibiliteit) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
+    <script>
+        // Wacht tot Firebase geladen is
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("DOM geladen, Firebase initialiseren...");
             
-            const ctx = canvas.getContext('2d');
-            let drawing = false;
-            let currentPath = [];
-            let paths = [];
-            
-            // Canvas grootte correct instellen
-            function resizeCanvas() {
-                const container = canvas.parentElement;
-                const containerWidth = container.clientWidth - 40;
-                canvas.width = Math.min(containerWidth, 600);
-                canvas.height = 200;
-                
-                // Herteken alle paden na resize
-                if (paths.length > 0) {
-                    drawPaths(paths);
-                }
-            }
-            
-            // Eerste resize
-            setTimeout(resizeCanvas, 50);
-            window.addEventListener('resize', resizeCanvas);
+            try {
+                // Firebase configuratie
+                const firebaseConfig = {
+                    apiKey: "AIzaSyCJ5of6K5MRFXMOiEqEyZxZbs1xoJtXuN8",
+                    authDomain: "pvaangifteinleveren.firebaseapp.com",
+                    databaseURL: "https://pvaangifteinleveren-default-rtdb.europe-west1.firebasedatabase.app",
+                    projectId: "pvaangifteinleveren",
+                    storageBucket: "pvaangifteinleveren.firebasestorage.app",
+                    messagingSenderId: "989190242332",
+                    appId: "1:989190242332:web:867ea95845325cf9835fd9"
+                };
 
-            // Teken functie
-            function drawPaths(pathsToDraw) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Initialize Firebase
+                const app = firebase.initializeApp(firebaseConfig);
+                const db = firebase.database();
                 
-                if (!pathsToDraw || pathsToDraw.length === 0) return;
-                
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = '#002d5e';
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                
-                pathsToDraw.forEach(path => {
-                    if (!path || path.length < 2) return;
+                console.log("Firebase geïnitialiseerd!");
+
+                // Globale variabelen voor huidige gebruiker
+                let currentUser = { naam: '', klas: '' };
+
+                // --- WHITEBOARD FUNCTIES ---
+                function setupWhiteboard(canvasId, docId) {
+                    const canvas = document.getElementById(canvasId);
+                    if (!canvas) {
+                        console.error(`Canvas ${canvasId} niet gevonden`);
+                        return;
+                    }
                     
-                    ctx.beginPath();
-                    ctx.moveTo(path[0].x, path[0].y);
+                    const ctx = canvas.getContext('2d');
+                    let drawing = false;
+                    let currentPath = [];
                     
-                    for (let i = 1; i < path.length; i++) {
-                        if (path[i] && path[i].x && path[i].y) {
-                            ctx.lineTo(path[i].x, path[i].y);
+                    // Canvas grootte instellen
+                    function resizeCanvas() {
+                        const container = canvas.parentElement;
+                        if (container) {
+                            const containerWidth = container.clientWidth - 40;
+                            canvas.width = Math.min(containerWidth, 600);
+                            canvas.height = 200;
                         }
                     }
-                    ctx.stroke();
-                });
-            }
-
-            // Live luisteren naar whiteboard updates van ALLE gebruikers in dezelfde klas
-            const whiteboardRef = ref(db, `whiteboards/${docId}`);
-            onValue(whiteboardRef, (snap) => {
-                const data = snap.val();
-                
-                if (data) {
-                    // Converteer object naar array van paden
-                    if (data.paths) {
-                        paths = Object.values(data.paths).map(p => {
-                            if (Array.isArray(p)) return p;
-                            if (typeof p === 'object') return Object.values(p);
-                            return [];
-                        }).filter(p => p.length > 0);
-                    } else {
-                        paths = [];
-                    }
-                } else {
-                    paths = [];
-                }
-                
-                drawPaths(paths);
-            }, (error) => {
-                console.error("Fout bij laden whiteboard:", error);
-            });
-
-            // Coördinaten berekenen (gecorrigeerd voor canvas grootte)
-            function getCoordinates(e) {
-                const rect = canvas.getBoundingClientRect();
-                
-                // Bereken verhouding tussen weergave en werkelijke canvas grootte
-                const scaleX = canvas.width / rect.width;
-                const scaleY = canvas.height / rect.height;
-                
-                let clientX, clientY;
-                
-                if (e.touches) {
-                    clientX = e.touches[0].clientX;
-                    clientY = e.touches[0].clientY;
-                    e.preventDefault();
-                } else {
-                    clientX = e.clientX;
-                    clientY = e.clientY;
-                }
-                
-                // Bereken positie binnen canvas
-                const x = (clientX - rect.left) * scaleX;
-                const y = (clientY - rect.top) * scaleY;
-                
-                // Begrens binnen canvas
-                return {
-                    x: Math.max(0, Math.min(canvas.width, x)),
-                    y: Math.max(0, Math.min(canvas.height, y))
-                };
-            }
-
-            // Start tekenen
-            function startDrawing(e) {
-                e.preventDefault();
-                drawing = true;
-                currentPath = [getCoordinates(e)];
-            }
-
-            // Tekenen
-            function draw(e) {
-                if (!drawing) return;
-                e.preventDefault();
-                
-                const pos = getCoordinates(e);
-                
-                // Voeg punt toe aan huidig pad
-                currentPath.push(pos);
-                
-                // Teken lokaal de lijn
-                if (currentPath.length >= 2) {
-                    ctx.beginPath();
-                    ctx.strokeStyle = '#002d5e';
-                    ctx.lineWidth = 3;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.moveTo(currentPath[currentPath.length-2].x, currentPath[currentPath.length-2].y);
-                    ctx.lineTo(pos.x, pos.y);
-                    ctx.stroke();
-                }
-            }
-
-            // Stop tekenen en opslaan in Firebase
-            function stopDrawing() {
-                if (!drawing || currentPath.length < 3) {
-                    drawing = false;
-                    return;
-                }
-                
-                drawing = false;
-                
-                // Sla het pad op in Firebase
-                const newPathRef = push(ref(db, `whiteboards/${docId}/paths`));
-                set(newPathRef, currentPath)
-                    .catch(error => console.error("Fout bij opslaan pad:", error));
-            }
-
-            // Event listeners (zowel muis als touch)
-            canvas.addEventListener('mousedown', startDrawing);
-            canvas.addEventListener('mousemove', draw);
-            canvas.addEventListener('mouseup', stopDrawing);
-            canvas.addEventListener('mouseleave', stopDrawing);
-            
-            canvas.addEventListener('touchstart', startDrawing, { passive: false });
-            canvas.addEventListener('touchmove', draw, { passive: false });
-            canvas.addEventListener('touchend', stopDrawing);
-            canvas.addEventListener('touchcancel', stopDrawing);
-
-            // Clear functie voor deze canvas
-            window[`clear_${canvasId}`] = function() {
-                if (confirm('Weet je zeker dat je het whiteboard wilt wissen?')) {
-                    set(ref(db, `whiteboards/${docId}`), { paths: {} })
-                        .catch(error => console.error("Fout bij wissen:", error));
-                }
-            };
-        }
-
-        // --- DASHBOARD FUNCTIES ---
-        window.startLes = function() {
-            const naam = document.getElementById('uNaam').value.trim();
-            const klas = document.getElementById('uKlas').value;
-            
-            if (!naam || !klas) {
-                alert("Vul a.u.b. je naam en eenheid in.");
-                return;
-            }
-            
-            currentUser = { naam, klas };
-            
-            // Verberg login, toon dashboard
-            document.getElementById('loginOverlay').style.display = 'none';
-            document.getElementById('mainContent').classList.remove('hidden');
-            document.getElementById('displayKlas').innerText = klas;
-            
-            // Initialiseer whiteboards voor deze klas
-            setTimeout(() => {
-                setupWhiteboard('c1', `bord1_${klas}`);
-                setupWhiteboard('c2', `bord2_${klas}`);
-            }, 100);
-            
-            // LIVE FEED ophalen voor deze eenheid
-            const feedRef = ref(db, `btv_2026/${klas}`);
-            onValue(feedRef, (snap) => {
-                const feed = document.getElementById('liveFeed');
-                const data = snap.val();
-                
-                let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="fGrid">';
-                
-                if (data) {
-                    // Sorteer op timestamp (nieuwste eerst)
-                    const items = Object.entries(data).sort((a, b) => {
-                        return (b[1].ts || 0) - (a[1].ts || 0);
-                    });
                     
-                    if (items.length === 0) {
-                        html += '<p class="text-slate-500 italic col-span-2">Nog geen berichten in deze feed...</p>';
-                    } else {
-                        items.forEach(([id, item]) => {
-                            const datum = item.ts ? new Date(item.ts).toLocaleTimeString('nl-NL') : '';
+                    resizeCanvas();
+                    window.addEventListener('resize', resizeCanvas);
+
+                    // Teken functie
+                    function drawPaths(paths) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        
+                        if (!paths || paths.length === 0) return;
+                        
+                        ctx.lineWidth = 3;
+                        ctx.strokeStyle = '#002d5e';
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        
+                        paths.forEach(path => {
+                            if (!path || path.length < 2) return;
                             
-                            html += `
-                                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative group hover:shadow-md transition" data-id="${id}">
-                                    <div class="flex justify-between items-start mb-2">
-                                        <div>
-                                            <span class="font-black text-blue-900 text-[10px] uppercase block">${item.naam || 'Onbekend'}</span>
-                                            <span class="text-[8px] text-slate-400">${datum}</span>
-                                        </div>
-                                        <span class="bg-blue-600 text-white text-[8px] px-2 py-1 rounded font-bold uppercase italic">${item.type || 'Bericht'}</span>
-                                    </div>
-                                    <p class="text-sm italic text-slate-700 mb-2">"${item.txt || ''}"</p>
-                                    ${item.feedback ? 
-                                        `<div class="mt-2 text-[8px] font-bold text-blue-800 italic uppercase bg-blue-50 p-2 rounded border-l-2 border-blue-600">
-                                            Feedback: ${item.feedback}
-                                        </div>` : 
-                                        ''
-                                    }
-                                    <button onclick="geefFeedback('${id}', '${klas}')" class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition bg-yellow-500 text-[8px] font-black px-2 py-1 rounded hover:bg-yellow-400">
-                                        Geef feedback
-                                    </button>
-                                </div>`;
+                            ctx.beginPath();
+                            ctx.moveTo(path[0].x, path[0].y);
+                            
+                            for (let i = 1; i < path.length; i++) {
+                                if (path[i] && typeof path[i].x === 'number' && typeof path[i].y === 'number') {
+                                    ctx.lineTo(path[i].x, path[i].y);
+                                }
+                            }
+                            ctx.stroke();
                         });
                     }
-                } else {
-                    html += '<p class="text-slate-500 italic col-span-2">Nog geen berichten in deze feed...</p>';
-                }
-                
-                html += '</div>';
-                feed.innerHTML = html;
-            }, (error) => {
-                console.error("Fout bij laden feed:", error);
-                document.getElementById('liveFeed').innerHTML = '<p class="text-red-500">Fout bij laden feed. Controleer je internetverbinding.</p>';
-            });
-        };
 
-        // Feedback geven op een bericht
-        window.geefFeedback = function(itemId, klas) {
-            const feedback = prompt("Geef feedback op dit bericht:");
-            if (feedback && feedback.trim()) {
-                const feedbackText = feedback.trim();
-                const updates = {};
-                updates[`btv_2026/${klas}/${itemId}/feedback`] = feedbackText;
-                
-                update(ref(db), updates)
-                    .then(() => {
-                        alert("Feedback opgeslagen!");
-                    })
-                    .catch(error => {
-                        console.error("Fout bij opslaan feedback:", error);
-                        alert("Fout bij opslaan feedback. Probeer opnieuw.");
+                    // Luister naar whiteboard updates
+                    const whiteboardRef = db.ref(`whiteboards/${docId}`);
+                    whiteboardRef.on('value', (snapshot) => {
+                        const data = snapshot.val();
+                        let paths = [];
+                        
+                        if (data && data.paths) {
+                            // Converteer object naar array
+                            paths = Object.values(data.paths).map(p => {
+                                if (Array.isArray(p)) return p;
+                                if (p && typeof p === 'object') return Object.values(p);
+                                return [];
+                            }).filter(p => p.length > 0);
+                        }
+                        
+                        drawPaths(paths);
+                    }, (error) => {
+                        console.error("Fout bij laden whiteboard:", error);
                     });
-            }
-        };
 
-        // Verstuur data naar livefeed
-        window.sendData = function(type, elementId) {
-            const txt = document.getElementById(elementId).value.trim();
-            if (!txt) {
-                alert("Voer tekst in.");
-                return;
-            }
-            
-            if (!currentUser.naam || !currentUser.klas) {
-                alert("Je bent niet ingelogd. Log opnieuw in.");
-                return;
-            }
-            
-            let feedback = "";
-            if (type === 'PV Bevindingen') {
-                const checkboxes = document.querySelectorAll('#feedbackChecklist input:checked');
-                feedback = Array.from(checkboxes).map(c => c.value).join(", ");
-            }
-            
-            const newPost = {
-                naam: currentUser.naam,
-                type: type,
-                txt: txt,
-                feedback: feedback,
-                ts: Date.now()
-            };
-            
-            push(ref(db, `btv_2026/${currentUser.klas}`), newPost)
-                .then(() => {
-                    document.getElementById(elementId).value = "";
+                    // Coördinaten berekenen
+                    function getCoordinates(e) {
+                        const rect = canvas.getBoundingClientRect();
+                        const scaleX = canvas.width / rect.width;
+                        const scaleY = canvas.height / rect.height;
+                        
+                        let clientX, clientY;
+                        
+                        if (e.touches) {
+                            clientX = e.touches[0].clientX;
+                            clientY = e.touches[0].clientY;
+                            e.preventDefault();
+                        } else {
+                            clientX = e.clientX;
+                            clientY = e.clientY;
+                        }
+                        
+                        return {
+                            x: Math.max(0, Math.min(canvas.width, (clientX - rect.left) * scaleX)),
+                            y: Math.max(0, Math.min(canvas.height, (clientY - rect.top) * scaleY))
+                        };
+                    }
+
+                    // Start tekenen
+                    function startDrawing(e) {
+                        e.preventDefault();
+                        drawing = true;
+                        currentPath = [getCoordinates(e)];
+                    }
+
+                    // Tekenen
+                    function draw(e) {
+                        if (!drawing) return;
+                        e.preventDefault();
+                        
+                        const pos = getCoordinates(e);
+                        currentPath.push(pos);
+                        
+                        // Teken lokaal
+                        if (currentPath.length >= 2) {
+                            ctx.beginPath();
+                            ctx.strokeStyle = '#002d5e';
+                            ctx.lineWidth = 3;
+                            ctx.lineCap = 'round';
+                            ctx.lineJoin = 'round';
+                            ctx.moveTo(currentPath[currentPath.length-2].x, currentPath[currentPath.length-2].y);
+                            ctx.lineTo(pos.x, pos.y);
+                            ctx.stroke();
+                        }
+                    }
+
+                    // Stop tekenen
+                    function stopDrawing() {
+                        if (!drawing || currentPath.length < 3) {
+                            drawing = false;
+                            return;
+                        }
+                        
+                        drawing = false;
+                        
+                        // Sla op in Firebase
+                        const newPathRef = db.ref(`whiteboards/${docId}/paths`).push();
+                        newPathRef.set(currentPath)
+                            .catch(error => console.error("Fout bij opslaan:", error));
+                    }
+
+                    // Event listeners
+                    canvas.addEventListener('mousedown', startDrawing);
+                    canvas.addEventListener('mousemove', draw);
+                    canvas.addEventListener('mouseup', stopDrawing);
+                    canvas.addEventListener('mouseleave', stopDrawing);
                     
-                    // Uncheck checkboxes bij PV
-                    if (type === 'PV Bevindingen') {
-                        document.querySelectorAll('#feedbackChecklist input:checked').forEach(cb => {
-                            cb.checked = false;
-                        });
+                    canvas.addEventListener('touchstart', startDrawing, { passive: false });
+                    canvas.addEventListener('touchmove', draw, { passive: false });
+                    canvas.addEventListener('touchend', stopDrawing);
+                    canvas.addEventListener('touchcancel', stopDrawing);
+
+                    // Clear functie
+                    window[`clear_${canvasId}`] = function() {
+                        if (confirm('Weet je zeker dat je het whiteboard wilt wissen?')) {
+                            db.ref(`whiteboards/${docId}`).set({ paths: {} })
+                                .catch(error => console.error("Fout bij wissen:", error));
+                        }
+                    };
+                }
+
+                // --- DASHBOARD FUNCTIES ---
+                window.startLes = function() {
+                    const naam = document.getElementById('uNaam').value.trim();
+                    const klas = document.getElementById('uKlas').value;
+                    
+                    if (!naam || !klas) {
+                        alert("Vul a.u.b. je naam en eenheid in.");
+                        return;
                     }
                     
-                    alert("Verzonden naar de livefeed!");
-                })
-                .catch(error => {
-                    console.error("Fout bij verzenden:", error);
-                    alert("Fout bij verzenden. Probeer opnieuw.");
-                });
-        };
+                    currentUser = { naam, klas };
+                    
+                    // Verberg login, toon dashboard
+                    document.getElementById('loginOverlay').style.display = 'none';
+                    document.getElementById('mainContent').classList.remove('hidden');
+                    document.getElementById('displayKlas').innerText = klas;
+                    
+                    // Toon loading indicator
+                    document.getElementById('liveFeed').innerHTML = '<p class="text-center text-slate-500">Laden van live feed...</p>';
+                    
+                    // Initialiseer whiteboards
+                    setTimeout(() => {
+                        setupWhiteboard('c1', `bord1_${klas}`);
+                        setupWhiteboard('c2', `bord2_${klas}`);
+                    }, 100);
+                    
+                    // LIVE FEED ophalen
+                    const feedRef = db.ref(`btv_2026/${klas}`);
+                    feedRef.off(); // Verwijder oude listeners
+                    feedRef.on('value', (snapshot) => {
+                        const feed = document.getElementById('liveFeed');
+                        const data = snapshot.val();
+                        
+                        let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+                        
+                        if (data) {
+                            // Converteer naar array en sorteer
+                            const items = Object.entries(data);
+                            items.sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
+                            
+                            if (items.length === 0) {
+                                html += '<p class="text-slate-500 italic col-span-2">Nog geen berichten in deze feed...</p>';
+                            } else {
+                                items.forEach(([id, item]) => {
+                                    const datum = item.ts ? new Date(item.ts).toLocaleTimeString('nl-NL') : '';
+                                    
+                                    html += `
+                                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative group hover:shadow-md transition" data-id="${id}">
+                                            <div class="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <span class="font-black text-blue-900 text-[10px] uppercase block">${item.naam || 'Onbekend'}</span>
+                                                    <span class="text-[8px] text-slate-400">${datum}</span>
+                                                </div>
+                                                <span class="bg-blue-600 text-white text-[8px] px-2 py-1 rounded font-bold uppercase italic">${item.type || 'Bericht'}</span>
+                                            </div>
+                                            <p class="text-sm italic text-slate-700 mb-2">"${item.txt || ''}"</p>
+                                            ${item.feedback ? 
+                                                `<div class="mt-2 text-[8px] font-bold text-blue-800 italic uppercase bg-blue-50 p-2 rounded border-l-2 border-blue-600">
+                                                    Feedback: ${item.feedback}
+                                                </div>` : 
+                                                ''
+                                            }
+                                            <button onclick="geefFeedback('${id}', '${klas}')" class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition bg-yellow-500 text-[8px] font-black px-2 py-1 rounded hover:bg-yellow-400">
+                                                Feedback
+                                            </button>
+                                        </div>`;
+                                });
+                            }
+                        } else {
+                            html += '<p class="text-slate-500 italic col-span-2">Nog geen berichten in deze feed...</p>';
+                        }
+                        
+                        html += '</div>';
+                        feed.innerHTML = html;
+                    }, (error) => {
+                        console.error("Fout bij laden feed:", error);
+                        document.getElementById('liveFeed').innerHTML = '<p class="text-red-500">Fout bij laden feed. Controleer je internetverbinding.</p>';
+                    });
+                };
 
-        // --- GRAMMATICA CONTROLE ---
-        window.checkZinnen = function() {
-            const criteria = [
-                ["ik legde", "zijligging"], ["ik zette", "kruising", "af"], ["ik riep", "ambulance"],
-                ["ik sprak", "slachtoffer", "aan"], ["ik hield", "verkeer", "afstand"], ["ik plaatste", "motorfiets"],
-                ["ik bekeek", "letsel"], ["ik verwijderde", "helm", "niet"], ["ik zette", "getuigen", "apart"],
-                ["ik noteerde", "rugklachten"], ["ik controleerde", "bewustzijn"], ["ik markeerde", "vloeistoffen"],
-                ["ik vroeg", "gegevens", "op"], ["ik maakte", "route", "vrij"], ["ik stelde", "pv", "op"]
-            ];
+                // Feedback geven
+                window.geefFeedback = function(itemId, klas) {
+                    const feedback = prompt("Geef feedback op dit bericht:");
+                    if (feedback && feedback.trim()) {
+                        const feedbackText = feedback.trim();
+                        db.ref(`btv_2026/${klas}/${itemId}`).update({
+                            feedback: feedbackText
+                        })
+                        .then(() => {
+                            alert("Feedback opgeslagen!");
+                        })
+                        .catch(error => {
+                            console.error("Fout bij opslaan feedback:", error);
+                            alert("Fout bij opslaan feedback. Probeer opnieuw.");
+                        });
+                    }
+                };
 
-            const input = document.getElementById('zinInput').value.toLowerCase();
-            let score = 0;
-            
-            criteria.forEach((woorden, i) => {
-                const correct = woorden.every(w => input.includes(w));
-                const dot = document.getElementById(`dot-${i+1}`);
-                if (dot) {
-                    dot.className = correct ? 
-                        "w-3 h-3 rounded-full bg-green-500 shadow-[0_0_8px_green]" : 
-                        "w-3 h-3 rounded-full bg-slate-300";
-                }
-                if (correct) score++;
-            });
-            
-            document.getElementById('liveScore').innerText = score;
-        };
+                // Verstuur data
+                window.sendData = function(type, elementId) {
+                    const txt = document.getElementById(elementId).value.trim();
+                    if (!txt) {
+                        alert("Voer tekst in.");
+                        return;
+                    }
+                    
+                    if (!currentUser.naam || !currentUser.klas) {
+                        alert("Je bent niet ingelogd. Log opnieuw in.");
+                        return;
+                    }
+                    
+                    let feedback = "";
+                    if (type === 'PV Bevindingen') {
+                        const checkboxes = document.querySelectorAll('#feedbackChecklist input:checked');
+                        feedback = Array.from(checkboxes).map(c => c.value).join(", ");
+                    }
+                    
+                    const newPost = {
+                        naam: currentUser.naam,
+                        type: type,
+                        txt: txt,
+                        feedback: feedback,
+                        ts: Date.now()
+                    };
+                    
+                    db.ref(`btv_2026/${currentUser.klas}`).push(newPost)
+                        .then(() => {
+                            document.getElementById(elementId).value = "";
+                            
+                            if (type === 'PV Bevindingen') {
+                                document.querySelectorAll('#feedbackChecklist input:checked').forEach(cb => {
+                                    cb.checked = false;
+                                });
+                            }
+                            
+                            alert("Verzonden naar de livefeed!");
+                        })
+                        .catch(error => {
+                            console.error("Fout bij verzenden:", error);
+                            alert("Fout bij verzenden. Probeer opnieuw.");
+                        });
+                };
+
+                // Grammatica controle
+                window.checkZinnen = function() {
+                    const criteria = [
+                        ["ik legde", "zijligging"], ["ik zette", "kruising", "af"], ["ik riep", "ambulance"],
+                        ["ik sprak", "slachtoffer", "aan"], ["ik hield", "verkeer", "afstand"], ["ik plaatste", "motorfiets"],
+                        ["ik bekeek", "letsel"], ["ik verwijderde", "helm", "niet"], ["ik zette", "getuigen", "apart"],
+                        ["ik noteerde", "rugklachten"], ["ik controleerde", "bewustzijn"], ["ik markeerde", "vloeistoffen"],
+                        ["ik vroeg", "gegevens", "op"], ["ik maakte", "route", "vrij"], ["ik stelde", "pv", "op"]
+                    ];
+
+                    const input = document.getElementById('zinInput').value.toLowerCase();
+                    let score = 0;
+                    
+                    criteria.forEach((woorden, i) => {
+                        const correct = woorden.every(w => input.includes(w));
+                        const dot = document.getElementById(`dot-${i+1}`);
+                        if (dot) {
+                            dot.className = correct ? 
+                                "w-3 h-3 rounded-full bg-green-500 shadow-[0_0_8px_green]" : 
+                                "w-3 h-3 rounded-full bg-slate-300";
+                        }
+                        if (correct) score++;
+                    });
+                    
+                    document.getElementById('liveScore').innerText = score;
+                };
+
+                console.log("Alle functies geregistreerd!");
+                
+            } catch (error) {
+                console.error("Fatal error bij initialisatie:", error);
+                alert("Er is een fout opgetreden bij het laden van de applicatie. Ververs de pagina en probeer opnieuw.");
+            }
+        });
     </script>
 
     <script>
-        // Zinnen voor de grammatica oefening (wordt gebruikt bij het genereren)
+        // Zinnen voor de grammatica oefening
         const zinnen = [
             "De motorrijder is door mij in stabiele zijligging gelegd.", 
             "De kruising is door mij direct afgezet.", 
@@ -420,7 +420,7 @@
             <div class="flex items-center gap-2 text-[10px] font-bold tracking-widest animate-pulse">● LIVE FEEDBACK ACTIEF</div>
         </header>
 
-        <!-- WHITEBOARDEN (DEEL 2A EN 2B) -->
+        <!-- WHITEBOARDEN -->
         <div class="grid md:grid-cols-2 gap-8">
             <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-[#002d5e]">
                 <div class="flex justify-between items-center mb-4">
@@ -442,7 +442,7 @@
             </div>
         </div>
 
-        <!-- GRAMMATICA OEFENING (DEEL 3) -->
+        <!-- GRAMMATICA OEFENING -->
         <section class="bg-white p-8 rounded-2xl shadow-lg border-t-4 border-blue-900">
             <div class="flex justify-between items-center mb-6 border-b pb-4">
                 <h2 class="font-black uppercase text-sm text-blue-900 italic">Deel 3: Actieve Verleden Tijd (Ik-vorm)</h2>
@@ -465,7 +465,7 @@
             </div>
         </section>
 
-        <!-- MELDING OPERATIONEEL CENTRUM -->
+        <!-- MELDING OC -->
         <section class="bg-red-700 text-white p-8 rounded-2xl shadow-xl border-l-[10px] border-yellow-500 relative overflow-hidden">
             <h2 class="font-black uppercase text-xs mb-4 text-yellow-400 tracking-widest italic underline">Melding Operationeel Centrum</h2>
             <div class="bg-red-800/50 p-6 rounded-xl border border-red-500 italic font-mono text-sm leading-relaxed">
@@ -474,7 +474,7 @@
             </div>
         </section>
 
-        <!-- SITUATIE AFBEELDINGEN (DEEL 5) -->
+        <!-- SITUATIE AFBEELDINGEN -->
         <section class="bg-white p-8 rounded-2xl shadow-lg border-t-4 border-blue-900">
             <h2 class="font-black uppercase text-sm mb-6 text-blue-900 italic underline">Deel 5: Ter Plaatse Situatie</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -493,7 +493,7 @@
             </div>
         </section>
 
-        <!-- PV VAN BEVINDINGEN & FEEDBACK (DEEL 6) -->
+        <!-- PV & FEEDBACK -->
         <section class="bg-slate-900 p-8 rounded-3xl shadow-2xl text-white">
             <h2 class="font-black uppercase text-sm mb-6 text-yellow-500 italic border-b border-white/10 pb-4">Deel 6: PV van Bevindingen & Feedback</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6" id="feedbackChecklist">

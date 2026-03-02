@@ -27,8 +27,9 @@
         window.currentKlas = "";
         window.currentNaam = "";
         window.lastDrawData = { c1: "", c2: "" };
+        window.drawings = { c1: [], c2: [] }; // Lijnen opslaan voor real-time
 
-        // REAL-TIME WHITEBOARD - VERBETERDE VERSIE
+        // REAL-TIME WHITEBOARD - met lijnregistratie voor échte samenwerking
         window.setupWhiteboardSync = async function(canvasId, boardKey, klas) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
@@ -42,7 +43,7 @@
             ctx.strokeStyle = '#002d5e';
 
             let drawing = false;
-            let lastX = 0, lastY = 0;
+            let currentPoints = []; // Tijdelijke opslag voor huidige lijn
             
             const getP = (e) => { 
                 const r = canvas.getBoundingClientRect(); 
@@ -52,13 +53,33 @@
                 }; 
             };
 
+            // ALLE LIJNEN OPNIEUW TEKENEN
+            function redrawAllLines() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.beginPath();
+                
+                window.drawings[canvasId].forEach(line => {
+                    if (line.length < 2) return;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(line[0].x, line[0].y);
+                    
+                    for (let i = 1; i < line.length; i++) {
+                        ctx.lineTo(line[i].x, line[i].y);
+                    }
+                    ctx.stroke();
+                });
+            }
+
             // Tekenen
             const startDrawing = (e) => {
                 e.preventDefault();
                 drawing = true;
                 const p = getP(e);
-                lastX = p.x;
-                lastY = p.y;
+                
+                // Start nieuwe lijn
+                currentPoints = [p];
+                
                 ctx.beginPath();
                 ctx.moveTo(p.x, p.y);
             };
@@ -66,19 +87,27 @@
             const draw = (e) => {
                 e.preventDefault();
                 if (!drawing) return;
+                
                 const p = getP(e);
+                
+                // Voeg punt toe aan huidige lijn
+                currentPoints.push(p);
+                
+                // Teken lijnstuk
                 ctx.lineTo(p.x, p.y);
                 ctx.stroke();
-                lastX = p.x;
-                lastY = p.y;
             };
 
             const stopDrawing = () => {
-                if (drawing) {
-                    drawing = false;
+                if (drawing && currentPoints.length > 1) {
+                    // Voeg lijn toe aan drawings array
+                    window.drawings[canvasId].push([...currentPoints]);
+                    
                     // Upload naar Firestore
                     window.uploadCanvasToFirestore(canvasId, boardKey, klas);
                 }
+                drawing = false;
+                currentPoints = [];
             };
 
             // Mouse events
@@ -95,6 +124,7 @@
 
             // Clear functie
             window['clear_'+canvasId] = () => { 
+                window.drawings[canvasId] = [];
                 ctx.clearRect(0,0,canvas.width,canvas.height); 
                 ctx.beginPath(); 
                 window.uploadCanvasToFirestore(canvasId, boardKey, klas); 
@@ -107,41 +137,28 @@
                 if (snap.exists()) {
                     const data = snap.data();
                     // Alleen laden als het NIET van onszelf komt
-                    if (data.imageData && data.lastUpdatedBy !== window.currentNaam) {
-                        // Vergelijk met huidige canvas om loops te voorkomen
-                        if (data.imageData !== canvas.toDataURL()) {
-                            const img = new Image();
-                            img.onload = () => {
-                                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                            };
-                            img.src = data.imageData;
-                        }
+                    if (data.drawings && data.lastUpdatedBy !== window.currentNaam) {
+                        // Ontvang lijnen van andere student
+                        window.drawings[canvasId] = data.drawings || [];
+                        redrawAllLines();
+                        console.log(`Canvas ${canvasId} ontvangen van ${data.lastUpdatedBy}`);
                     }
                 }
             });
         };
 
-        // Upload canvas naar Firestore
+        // Upload drawings naar Firestore
         window.uploadCanvasToFirestore = async function(canvasId, boardKey, klas) {
-            const canvas = document.getElementById(canvasId);
-            if (!canvas) return;
+            if (!window.drawings[canvasId]) return;
             
-            // Alleen uploaden als er echt getekend is
-            const imageData = canvas.toDataURL();
-            
-            // Voorkom dubbele uploads
-            if (window.lastDrawData[canvasId] === imageData) return;
-            window.lastDrawData[canvasId] = imageData;
-
             const boardDocRef = doc(db, "whiteboards", `${LES_ID}_${boardKey}_${klas}`);
             await setDoc(boardDocRef, {
-                imageData: imageData,
+                drawings: window.drawings[canvasId],
                 lastUpdatedBy: window.currentNaam,
                 timestamp: serverTimestamp()
             }, { merge: true });
             
-            console.log(`Canvas ${canvasId} geüpload door ${window.currentNaam}`);
+            console.log(`Canvas ${canvasId} geüpload door ${window.currentNaam} (${window.drawings[canvasId].length} lijnen)`);
         };
 
         // LOGIN / START
@@ -153,6 +170,9 @@
             window.currentKlas = klas;
             window.currentNaam = naam;
             
+            // Reset drawings voor nieuwe sessie
+            window.drawings = { c1: [], c2: [] };
+            
             // Verberg login, toon dashboard
             document.getElementById('loginOverlay').style.display='none';
             document.getElementById('mainContent').classList.remove('hidden');
@@ -162,7 +182,7 @@
             setTimeout(() => {
                 window.setupWhiteboardSync('c1', 'bord1', klas);
                 window.setupWhiteboardSync('c2', 'bord2', klas);
-            }, 100); // Kleine timeout om zeker te zijn dat canvas geladen is
+            }, 100);
             
             // Start livefeed
             window.initLive(klas);
@@ -272,6 +292,10 @@
                 document.querySelectorAll('textarea').forEach(t => t.value = "");
                 document.getElementById('liveScore').innerText = "0";
                 document.querySelectorAll('#feedbackChecklist input').forEach(c => c.checked = false);
+                
+                // Ook drawings resetten
+                window.drawings = { c1: [], c2: [] };
+                
                 alert("Alles is gereset.");
             }
         };
@@ -309,7 +333,8 @@
         .shadow-police { box-shadow: 0 4px 15px rgba(0, 45, 94, 0.2); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         #liveFeed > div > div { animation: fadeIn 0.3s ease-out; }
-        canvas { cursor: crosshair; touch-action: none; }
+        canvas { cursor: crosshair; touch-action: none; border: 2px solid #e2e8f0; }
+        canvas:hover { border-color: #002d5e; }
     </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-900 pb-20 p-4">
@@ -335,26 +360,28 @@
             <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-[10px] uppercase">Reset Alle Velden</button>
         </header>
 
-        <!-- CANVAS SECTIES - REAL-TIME VOOR ALLE STUDENTEN IN DEZELFDE KLAS -->
+        <!-- CANVAS SECTIES - ECHT REAL-TIME SAMENWERKEN -->
         <section class="space-y-6">
-            <!-- DEEL 2a -->
+            <!-- DEEL 2a - REAL-TIME BORD -->
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="font-black uppercase text-sm text-police italic">Deel 2a: Redenen van Wetenschap</h2>
                     <button onclick="clear_c1()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
                 </div>
                 <canvas id="c1" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none" style="height:180px; width:100%;"></canvas>
+                <p class="text-[10px] text-green-600 mb-2 italic">✏️ Real-time samenwerking: alle studenten in deze eenheid zien elkaars tekeningen</p>
                 <textarea id="t1" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij redenen van wetenschap..."></textarea>
                 <button onclick="sendData('Redenen Wetenschap', 't1')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">Inleveren</button>
             </div>
 
-            <!-- DEEL 2b -->
+            <!-- DEEL 2b - REAL-TIME BORD -->
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="font-black uppercase text-sm text-police italic">Deel 2b: ovt let op de ik-vorm</h2>
                     <button onclick="clear_c2()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
                 </div>
                 <canvas id="c2" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none" style="height:180px; width:100%;"></canvas>
+                <p class="text-[10px] text-green-600 mb-2 italic">✏️ Real-time samenwerking: alle studenten in deze eenheid zien elkaars tekeningen</p>
                 <textarea id="t2" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij schets..."></textarea>
                 <button onclick="sendData('Situatieschets', 't2')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">Inleveren</button>
             </div>

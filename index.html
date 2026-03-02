@@ -313,7 +313,7 @@
             </div>
         </header>
 
-        <!-- DEEL 1: MELDING OPERATIONEEL CENTRUM - ORIGINELE TEKST TERUG -->
+        <!-- DEEL 1: MELDING OPERATIONEEL CENTRUM -->
         <section class="bg-red-700 text-white p-8 rounded-2xl shadow-xl border-l-[10px] border-yellow-500 relative overflow-hidden">
             <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-8 -mt-8"></div>
             <h2 class="font-black uppercase text-xs mb-4 text-yellow-400 tracking-widest italic flex items-center gap-2">
@@ -415,48 +415,60 @@
             </div>
         </section>
 
-        <!-- DEEL 4 + 5: SITUATIE TER PLAATSE - ORIGINELE FOTO'S TERUG -->
+        <!-- DEEL 4: SITUATIE FOTO'S - AANGEPAST MET DE JUISTE BESTANDEN -->
         <section class="bg-white p-8 rounded-2xl shadow-lg border-t-4 border-blue-900">
-            <h2 class="font-black uppercase text-sm mb-6 text-blue-900 italic underline">Deel 5: Ter Plaatse Situatie</h2>
+            <h2 class="font-black uppercase text-sm mb-6 text-blue-900 italic underline">Deel 4: Situatie Ter Plaatse</h2>
             
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <!-- Snelheidsbord - Originele foto -->
-                <div class="text-center">
-                    <img src="bord50.png" onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'200\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%23ffffff\' stroke=\'%23ff0000\' stroke-width=\'8\'/%3E%3Ctext x=\'50\' y=\'70\' font-size=\'40\' text-anchor=\'middle\' fill=\'%23ff0000\' font-weight=\'bold\' font-family=\'Arial\'%3E50%3C/text%3E%3C/svg%3E'" 
-                         alt="Snelheidsbord 50" class="w-full h-48 object-contain rounded-xl shadow border mb-2">
-                    <span class="text-[9px] font-black text-slate-400 uppercase">Snelheid</span>
+                <!-- Snelheidsbord - bord50.png -->
+                <div class="text-center group">
+                    <div class="bg-slate-100 p-4 rounded-xl border-2 border-slate-200 mb-2 group-hover:border-blue-400 transition h-48 flex items-center justify-center">
+                        <img src="bord50.png" 
+                             alt="Snelheidsbord 50 km/h" 
+                             class="max-w-full max-h-40 object-contain"
+                             onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'200\' viewBox=\'0 0 100 100\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'45\' fill=\'%23ffffff\' stroke=\'%23ff0000\' stroke-width=\'8\'/%3E%3Ctext x=\'50\' y=\'70\' font-size=\'40\' text-anchor=\'middle\' fill=\'%23ff0000\' font-weight=\'bold\' font-family=\'Arial\'%3E50%3C/text%3E%3C/svg%3E'">
+                    </div>
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-wider">bord50.png - Snelheidslimiet</span>
                 </div>
                 
-                <!-- Kaart - Originele foto -->
-                <div class="text-center">
-                    <img src="maps.png" onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'300\' viewBox=\'0 0 400 300\'%3E%3Crect width=\'400\' height=\'300\' fill=\'%23e5f2ff\'/%3E%3Ctext x=\'200\' y=\'100\' font-size=\'20\' text-anchor=\'middle\' fill=\'%23002d5e\' font-weight=\'bold\'%3EKaart%3C/text%3E%3Ctext x=\'200\' y=\'140\' font-size=\'16\' text-anchor=\'middle\' fill=\'%23002d5e\'%3EWestzijde%3C/text%3E%3Ctext x=\'200\' y=\'170\' font-size=\'16\' text-anchor=\'middle\' fill=\'%23002d5e\'%3EZaandam%3C/text%3E%3C/svg%3E'" 
-                         alt="Kaart Westzijde" class="w-full h-48 object-cover rounded-xl shadow border mb-2">
-                    <span class="text-[9px] font-black text-slate-400 uppercase">Locatie</span>
+                <!-- Google Maps - kruispuntgooglemaps.png -->
+                <div class="text-center group">
+                    <div class="bg-slate-100 p-4 rounded-xl border-2 border-slate-200 mb-2 group-hover:border-blue-400 transition h-48 flex items-center justify-center">
+                        <img src="kruispuntgooglemaps.png" 
+                             alt="Google Maps afbeelding kruispunt" 
+                             class="max-w-full max-h-40 object-contain"
+                             onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'300\' viewBox=\'0 0 400 300\'%3E%3Crect width=\'400\' height=\'300\' fill=\'%23e5f2ff\'/%3E%3Ctext x=\'200\' y=\'100\' font-size=\'20\' text-anchor=\'middle\' fill=\'%23002d5e\' font-weight=\'bold\'%3EGoogle Maps%3C/text%3E%3Ctext x=\'200\' y=\'140\' font-size=\'16\' text-anchor=\'middle\' fill=\'%23002d5e\'%3EWestzijde%3C/text%3E%3Ctext x=\'200\' y=\'170\' font-size=\'16\' text-anchor=\'middle\' fill=\'%23002d5e\'%3EZaandam%3C/text%3E%3C/svg%3E'">
+                    </div>
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-wider">kruispuntgooglemaps.png - Locatie</span>
                 </div>
                 
-                <!-- Kruispunt - Originele foto -->
-                <div class="text-center">
-                    <img src="kruispunt.png" onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'300\' viewBox=\'0 0 400 300\'%3E%3Crect width=\'400\' height=\'300\' fill=\'%23fff3e0\'/%3E%3Cline x1=\'0\' y1=\'150\' x2=\'400\' y2=\'150\' stroke=\'%23333\' stroke-width=\'3\'/%3E%3Cline x1=\'200\' y1=\'0\' x2=\'200\' y2=\'300\' stroke=\'%23333\' stroke-width=\'3\'/%3E%3Ccircle cx=\'200\' cy=\'150\' r=\'15\' fill=\'%23ff0000\'/%3E%3Ctext x=\'200\' y=\'190\' font-size=\'16\' text-anchor=\'middle\' fill=\'%23000\'%3EKruispunt%3C/text%3E%3C/svg%3E'" 
-                         alt="Kruispunt Situatie" class="w-full h-48 object-cover rounded-xl shadow border mb-2">
-                    <span class="text-[9px] font-black text-slate-400 uppercase">Situatie</span>
+                <!-- Overzicht kruispunt - overzichtkruispunt.png -->
+                <div class="text-center group">
+                    <div class="bg-slate-100 p-4 rounded-xl border-2 border-slate-200 mb-2 group-hover:border-blue-400 transition h-48 flex items-center justify-center">
+                        <img src="overzichtkruispunt.png" 
+                             alt="Overzichtsfoto kruispunt" 
+                             class="max-w-full max-h-40 object-contain"
+                             onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'300\' viewBox=\'0 0 400 300\'%3E%3Crect width=\'400\' height=\'300\' fill=\'%23fff3e0\'/%3E%3Cline x1=\'0\' y1=\'150\' x2=\'400\' y2=\'150\' stroke=\'%23333\' stroke-width=\'3\'/%3E%3Cline x1=\'200\' y1=\'0\' x2=\'200\' y2=\'300\' stroke=\'%23333\' stroke-width=\'3\'/%3E%3Ccircle cx=\'200\' cy=\'150\' r=\'20\' fill=\'%23ff0000\'/%3E%3Ctext x=\'200\' y=\'200\' font-size=\'14\' text-anchor=\'middle\' fill=\'%23000\'%3EKruispunt%3C/text%3E%3C/svg%3E'">
+                    </div>
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-wider">overzichtkruispunt.png - Overzicht</span>
                 </div>
             </div>
             
-            <!-- Extra details -->
-            <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px]">
-                <div class="bg-slate-50 p-2 rounded border border-slate-200"><span class="font-black">📍</span> 50m voor kruising</div>
-                <div class="bg-slate-50 p-2 rounded border border-slate-200"><span class="font-black">🚦</span> Verkeerslichten uit</div>
-                <div class="bg-slate-50 p-2 rounded border border-slate-200"><span class="font-black">👮</span> 2 getuigen aanwezig</div>
-                <div class="bg-slate-50 p-2 rounded border border-slate-200"><span class="font-black">🏥</span> Ambulance onderweg</div>
+            <!-- Uitleg bij de foto's -->
+            <div class="mt-6 bg-blue-50 p-4 rounded-xl border border-blue-200">
+                <p class="text-xs text-blue-800">
+                    <span class="font-black">Situatie:</span> Kruising Vincent van Goghweg / Westzijde, Zaandam. 
+                    Motorrijder gevallen op de rijbaan. Gebruik deze afbeeldingen voor je PV van bevindingen.
+                </p>
             </div>
         </section>
 
-        <!-- DEEL 6: PV VAN BEVINDINGEN -->
+        <!-- DEEL 5: PV VAN BEVINDINGEN -->
         <section class="bg-slate-900 p-8 rounded-3xl shadow-2xl text-white relative overflow-hidden">
             <div class="absolute top-0 right-0 w-64 h-64 bg-yellow-500/5 rounded-full -mr-20 -mt-20"></div>
             
             <h2 class="font-black uppercase text-sm mb-2 text-yellow-500 italic flex items-center gap-2">
-                <span>📋</span> Deel 6: PV van Bevindingen
+                <span>📋</span> Deel 5: PV van Bevindingen
             </h2>
             <p class="text-[10px] text-slate-400 mb-6">Zaandam, 10 maart 2026 - Processen-verbaal van bevindingen</p>
             
@@ -478,15 +490,28 @@
                     <input type="checkbox" value="Strafbaar feit" class="accent-yellow-500">
                     <span class="text-[11px] font-bold uppercase">Strafbaar feit?</span>
                 </label>
+                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition">
+                    <input type="checkbox" value="Getuigen" class="accent-yellow-500">
+                    <span class="text-[11px] font-bold uppercase">Getuigen gehoord?</span>
+                </label>
+                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition">
+                    <input type="checkbox" value="Letsel" class="accent-yellow-500">
+                    <span class="text-[11px] font-bold uppercase">Letsel geconstateerd?</span>
+                </label>
             </div>
             
             <!-- PV Invoer -->
             <textarea id="pvInput" class="w-full bg-white/10 border-2 border-white/10 p-6 rounded-2xl text-sm h-48 outline-none focus:border-yellow-500 text-white placeholder-white/50" placeholder="Stel hier je PV op..."></textarea>
             
-            <!-- Verstuur knoppen -->
+            <!-- Verstuur knop -->
             <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-yellow-500 text-slate-900 py-5 mt-6 rounded-2xl font-black uppercase tracking-widest shadow-xl hover:bg-yellow-400 transition flex items-center justify-center gap-2">
                 <span>📤</span> Verstuur naar Livefeed
             </button>
+            
+            <!-- Hint -->
+            <p class="text-[8px] text-slate-500 mt-4 italic text-center">
+                Tip: Gebruik de foto's hierboven voor je beschrijving van de situatie
+            </p>
         </section>
 
         <!-- LIVE FEED -->

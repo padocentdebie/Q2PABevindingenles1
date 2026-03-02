@@ -26,37 +26,57 @@
         // GLOBALE VARIABELEN
         window.currentKlas = "";
         window.currentNaam = "";
-        window.lastDrawData = { c1: "", c2: "" };
-        window.drawings = { c1: [], c2: [] }; // Lijnen opslaan voor real-time
+        window.drawings = { c1: [], c2: [] };
+        window.activeCanvas = null;
 
-        // REAL-TIME WHITEBOARD - met lijnregistratie voor échte samenwerking
+        // REAL-TIME WHITEBOARD - verbeterde versie
         window.setupWhiteboardSync = async function(canvasId, boardKey, klas) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
+            
             const ctx = canvas.getContext('2d');
             
-            // Zet canvas formaat
+            // Canvas grootte instellen
             canvas.width = canvas.offsetWidth;
             canvas.height = 180;
-            ctx.lineWidth = 3; 
-            ctx.lineCap = 'round'; 
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
             ctx.strokeStyle = '#002d5e';
 
+            // Tekenvariabelen
             let drawing = false;
-            let currentPoints = []; // Tijdelijke opslag voor huidige lijn
+            let lastX = 0;
+            let lastY = 0;
             
-            const getP = (e) => { 
-                const r = canvas.getBoundingClientRect(); 
-                return { 
-                    x: (e.touches?.[0].clientX || e.clientX) - r.left, 
-                    y: (e.touches?.[0].clientY || e.clientY) - r.top 
-                }; 
+            // Huidige lijn opslaan
+            let currentLine = [];
+            
+            const getCoordinates = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                
+                let clientX, clientY;
+                
+                if (e.touches) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+                
+                return {
+                    x: (clientX - rect.left) * scaleX,
+                    y: (clientY - rect.top) * scaleY
+                };
             };
 
             // ALLE LIJNEN OPNIEUW TEKENEN
             function redrawAllLines() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.beginPath();
+                
+                if (!window.drawings[canvasId] || window.drawings[canvasId].length === 0) return;
                 
                 window.drawings[canvasId].forEach(line => {
                     if (line.length < 2) return;
@@ -71,118 +91,136 @@
                 });
             }
 
-            // Tekenen
+            // REAL-TIME LISTENER voor Firebase
+            const boardDocRef = doc(db, "whiteboards", `${LES_ID}_${boardKey}_${klas}`);
+            
+            onSnapshot(boardDocRef, (snap) => {
+                if (snap.exists()) {
+                    const data = snap.data();
+                    
+                    // Alleen als het van iemand anders is
+                    if (data.lastUpdatedBy !== window.currentNaam) {
+                        console.log(`Ontvangen update voor ${canvasId} van ${data.lastUpdatedBy}`);
+                        
+                        // Sla de ontvangen lijnen op
+                        if (data.drawings && Array.isArray(data.drawings)) {
+                            window.drawings[canvasId] = data.drawings;
+                            redrawAllLines();
+                        }
+                    }
+                }
+            });
+
+            // TEKENFUNCTIES
             const startDrawing = (e) => {
                 e.preventDefault();
                 drawing = true;
-                const p = getP(e);
+                const coords = getCoordinates(e);
                 
-                // Start nieuwe lijn
-                currentPoints = [p];
+                lastX = coords.x;
+                lastY = coords.y;
+                
+                // Begin nieuwe lijn
+                currentLine = [{ x: coords.x, y: coords.y }];
                 
                 ctx.beginPath();
-                ctx.moveTo(p.x, p.y);
+                ctx.moveTo(coords.x, coords.y);
             };
 
             const draw = (e) => {
                 e.preventDefault();
                 if (!drawing) return;
                 
-                const p = getP(e);
+                const coords = getCoordinates(e);
                 
                 // Voeg punt toe aan huidige lijn
-                currentPoints.push(p);
+                currentLine.push({ x: coords.x, y: coords.y });
                 
-                // Teken lijnstuk
-                ctx.lineTo(p.x, p.y);
+                // Teken lijn
+                ctx.lineTo(coords.x, coords.y);
                 ctx.stroke();
             };
 
             const stopDrawing = () => {
-                if (drawing && currentPoints.length > 1) {
-                    // Voeg lijn toe aan drawings array
-                    window.drawings[canvasId].push([...currentPoints]);
+                if (drawing && currentLine.length > 1) {
+                    // Voeg lijn toe aan lokale drawings
+                    if (!window.drawings[canvasId]) {
+                        window.drawings[canvasId] = [];
+                    }
+                    window.drawings[canvasId].push([...currentLine]);
                     
-                    // Upload naar Firestore
-                    window.uploadCanvasToFirestore(canvasId, boardKey, klas);
+                    // Upload naar Firebase (zonder te wachten)
+                    uploadToFirebase();
                 }
                 drawing = false;
-                currentPoints = [];
+                currentLine = [];
             };
 
-            // Mouse events
+            // Upload functie
+            async function uploadToFirebase() {
+                try {
+                    await setDoc(boardDocRef, {
+                        drawings: window.drawings[canvasId] || [],
+                        lastUpdatedBy: window.currentNaam,
+                        timestamp: serverTimestamp()
+                    }, { merge: true });
+                    
+                    console.log(`Canvas ${canvasId} geüpload door ${window.currentNaam}`);
+                } catch (error) {
+                    console.error("Upload error:", error);
+                }
+            }
+
+            // Clear functie
+            window['clear_'+canvasId] = () => {
+                window.drawings[canvasId] = [];
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.beginPath();
+                
+                // Upload leeg canvas
+                uploadToFirebase();
+            };
+
+            // Event listeners
             canvas.addEventListener('mousedown', startDrawing);
             canvas.addEventListener('mousemove', draw);
             canvas.addEventListener('mouseup', stopDrawing);
             canvas.addEventListener('mouseleave', stopDrawing);
-
-            // Touch events
+            
             canvas.addEventListener('touchstart', startDrawing, { passive: false });
             canvas.addEventListener('touchmove', draw, { passive: false });
             canvas.addEventListener('touchend', stopDrawing);
             canvas.addEventListener('touchcancel', stopDrawing);
 
-            // Clear functie
-            window['clear_'+canvasId] = () => { 
-                window.drawings[canvasId] = [];
-                ctx.clearRect(0,0,canvas.width,canvas.height); 
-                ctx.beginPath(); 
-                window.uploadCanvasToFirestore(canvasId, boardKey, klas); 
-            };
-
-            // REAL-TIME LISTENEN naar veranderingen van ANDEREN
-            const boardDocRef = doc(db, "whiteboards", `${LES_ID}_${boardKey}_${klas}`);
-            
-            onSnapshot(boardDocRef, (snap) => {
-                if (snap.exists()) {
-                    const data = snap.data();
-                    // Alleen laden als het NIET van onszelf komt
-                    if (data.drawings && data.lastUpdatedBy !== window.currentNaam) {
-                        // Ontvang lijnen van andere student
-                        window.drawings[canvasId] = data.drawings || [];
-                        redrawAllLines();
-                        console.log(`Canvas ${canvasId} ontvangen van ${data.lastUpdatedBy}`);
-                    }
-                }
-            });
-        };
-
-        // Upload drawings naar Firestore
-        window.uploadCanvasToFirestore = async function(canvasId, boardKey, klas) {
-            if (!window.drawings[canvasId]) return;
-            
-            const boardDocRef = doc(db, "whiteboards", `${LES_ID}_${boardKey}_${klas}`);
-            await setDoc(boardDocRef, {
-                drawings: window.drawings[canvasId],
-                lastUpdatedBy: window.currentNaam,
-                timestamp: serverTimestamp()
-            }, { merge: true });
-            
-            console.log(`Canvas ${canvasId} geüpload door ${window.currentNaam} (${window.drawings[canvasId].length} lijnen)`);
+            console.log(`Whiteboard ${canvasId} geïnitialiseerd voor klas ${klas}`);
         };
 
         // LOGIN / START
         window.startLes = function() {
             const naam = document.getElementById('uNaam').value.trim();
             const klas = document.getElementById('uKlas').value;
-            if(!naam || !klas) return alert("Vul voornaam en eenheid in.");
+            
+            if(!naam || !klas) {
+                alert("Vul voornaam en eenheid in.");
+                return;
+            }
             
             window.currentKlas = klas;
             window.currentNaam = naam;
             
-            // Reset drawings voor nieuwe sessie
+            // Reset drawings
             window.drawings = { c1: [], c2: [] };
             
             // Verberg login, toon dashboard
-            document.getElementById('loginOverlay').style.display='none';
+            document.getElementById('loginOverlay').style.display = 'none';
             document.getElementById('mainContent').classList.remove('hidden');
             document.getElementById('displayKlas').innerText = klas;
             
-            // Init whiteboards met real-time sync
+            // Init whiteboards na een korte pauze (zodat canvas geladen is)
             setTimeout(() => {
                 window.setupWhiteboardSync('c1', 'bord1', klas);
                 window.setupWhiteboardSync('c2', 'bord2', klas);
-            }, 100);
+            }, 200);
             
             // Start livefeed
             window.initLive(klas);
@@ -194,9 +232,11 @@
         window.initLive = async function(klas) {
             try {
                 const q = query(collection(db, "btv_2026"), where("klas", "==", klas), orderBy("ts", "desc"));
+                
                 onSnapshot(q, (sn) => {
                     const feed = document.getElementById('liveFeed');
                     if (!feed) return;
+                    
                     feed.innerHTML = "";
                     
                     if (sn.empty) {
@@ -210,45 +250,39 @@
                     sn.forEach(d => {
                         const data = d.data();
                         const feedbackTags = data.feedback ? data.feedback.split(', ') : [];
-                        const tijd = data.ts ? new Date(data.ts.seconds * 1000).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'zojuist';
+                        const tijd = data.ts ? new Date(data.ts.seconds * 1000).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : 'zojuist';
                         
                         const card = document.createElement('div');
-                        card.className = "bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col";
+                        card.className = "bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden";
                         card.innerHTML = `
                             <div class="bg-slate-100 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
-                                <div class="flex items-center gap-2">
-                                    <span class="font-black text-blue-900 text-[11px] uppercase tracking-tighter">${window.escapeHtml(data.naam)}</span>
-                                    <span class="text-[8px] text-slate-500 font-mono">${tijd}</span>
-                                </div>
-                                <span class="bg-blue-900 text-white text-[9px] px-2 py-0.5 rounded-full font-bold uppercase">${window.escapeHtml(data.type)}</span>
+                                <span class="font-black text-blue-900 text-[11px] uppercase">${window.escapeHtml(data.naam)}</span>
+                                <span class="text-[8px] text-slate-500">${tijd}</span>
                             </div>
-                            <div class="p-4 flex-grow">
-                                <p class="text-slate-700 text-sm leading-relaxed italic">"${window.escapeHtml(data.txt)}"</p>
+                            <div class="p-4">
+                                <span class="bg-blue-900 text-white text-[8px] px-2 py-0.5 rounded-full font-bold uppercase">${window.escapeHtml(data.type)}</span>
+                                <p class="text-slate-700 text-sm mt-2 italic">"${window.escapeHtml(data.txt)}"</p>
                             </div>
                             ${data.feedback ? `
-                            <div class="p-4 bg-blue-50/50 border-t border-blue-100">
-                                <span class="text-[9px] font-black text-blue-800 uppercase block mb-2">Behandelde onderdelen:</span>
+                            <div class="px-4 pb-4">
                                 <div class="flex flex-wrap gap-1">
-                                    ${feedbackTags.map(tag => `<span class="bg-white border border-blue-200 text-blue-700 text-[9px] px-2 py-1 rounded font-bold">✓ ${window.escapeHtml(tag)}</span>`).join('')}
+                                    ${feedbackTags.map(tag => `<span class="bg-blue-50 text-blue-700 text-[8px] px-2 py-1 rounded">✓ ${window.escapeHtml(tag)}</span>`).join('')}
                                 </div>
                             </div>` : ''}
                         `;
                         grid.appendChild(card);
                     });
                     feed.appendChild(grid);
-                }, (error) => {
-                    console.error("Livefeed error:", error);
-                    document.getElementById('liveFeed').innerHTML = '<div class="text-red-600 p-4">Fout bij laden livefeed.</div>';
                 });
             } catch (error) {
-                console.error("Init live error:", error);
+                console.error("Livefeed error:", error);
             }
         };
 
-        // Helper om XSS te voorkomen
+        // Helper
         window.escapeHtml = function(unsafe) {
             if (!unsafe) return '';
-            return unsafe
+            return String(unsafe)
                 .replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
                 .replace(/>/g, "&gt;")
@@ -262,17 +296,25 @@
                 const txt = document.getElementById(elementId).value;
                 const naam = document.getElementById('uNaam').value;
                 const klas = document.getElementById('uKlas').value;
-                if(!txt) return alert("Veld is leeg.");
+                
+                if(!txt) {
+                    alert("Veld is leeg.");
+                    return;
+                }
                 
                 const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
                 const feedbackString = gekozen.join(", ");
                 
                 await addDoc(collection(db, "btv_2026"), { 
-                    naam, klas, type, txt, ts: serverTimestamp(),
+                    naam, 
+                    klas, 
+                    type, 
+                    txt, 
+                    ts: serverTimestamp(),
                     feedback: feedbackString
                 });
                 
-                // Korte visuele feedback
+                // Visuele feedback
                 const btn = event.target;
                 const origText = btn.innerText;
                 btn.innerText = '✓ Verzonden';
@@ -281,9 +323,10 @@
                     btn.innerText = origText;
                     btn.classList.remove('bg-green-600');
                 }, 1500);
+                
             } catch (error) {
                 console.error("Send error:", error);
-                alert("Fout bij verzenden: " + error.message);
+                alert("Fout bij verzenden");
             }
         };
 
@@ -292,10 +335,6 @@
                 document.querySelectorAll('textarea').forEach(t => t.value = "");
                 document.getElementById('liveScore').innerText = "0";
                 document.querySelectorAll('#feedbackChecklist input').forEach(c => c.checked = false);
-                
-                // Ook drawings resetten
-                window.drawings = { c1: [], c2: [] };
-                
                 alert("Alles is gereset.");
             }
         };
@@ -314,6 +353,7 @@
         function checkZinnen() {
             const tekst = document.getElementById('zinInput').value.toLowerCase();
             let score = 0;
+            
             criteria.forEach((woorden, index) => {
                 const indicator = document.getElementById(`check-${index + 1}`);
                 if (indicator) {
@@ -322,6 +362,7 @@
                     if (isCorrect) score++;
                 }
             });
+            
             document.getElementById('liveScore').innerText = score;
         }
 
@@ -331,10 +372,27 @@
     <style>
         .bg-police { background-color: #002d5e; }
         .shadow-police { box-shadow: 0 4px 15px rgba(0, 45, 94, 0.2); }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        #liveFeed > div > div { animation: fadeIn 0.3s ease-out; }
-        canvas { cursor: crosshair; touch-action: none; border: 2px solid #e2e8f0; }
+        canvas { 
+            cursor: crosshair; 
+            touch-action: none; 
+            border: 2px solid #e2e8f0;
+            background-color: #f8fafc;
+        }
         canvas:hover { border-color: #002d5e; }
+        .realtime-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: #10b981;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-900 pb-20 p-4">
@@ -360,16 +418,22 @@
             <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-[10px] uppercase">Reset Alle Velden</button>
         </header>
 
-        <!-- CANVAS SECTIES - ECHT REAL-TIME SAMENWERKEN -->
+        <!-- CANVAS SECTIES - ECHT REAL-TIME -->
         <section class="space-y-6">
             <!-- DEEL 2a - REAL-TIME BORD -->
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="font-black uppercase text-sm text-police italic">Deel 2a: Redenen van Wetenschap</h2>
+                    <div class="flex items-center">
+                        <span class="realtime-indicator"></span>
+                        <h2 class="font-black uppercase text-sm text-police italic">Deel 2a: Redenen van Wetenschap</h2>
+                    </div>
                     <button onclick="clear_c1()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
                 </div>
                 <canvas id="c1" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none" style="height:180px; width:100%;"></canvas>
-                <p class="text-[10px] text-green-600 mb-2 italic">✏️ Real-time samenwerking: alle studenten in deze eenheid zien elkaars tekeningen</p>
+                <p class="text-xs text-green-600 mb-2 flex items-center">
+                    <span class="realtime-indicator"></span>
+                    <span>Real-time samenwerking actief - alle tekeningen worden direct gedeeld</span>
+                </p>
                 <textarea id="t1" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij redenen van wetenschap..."></textarea>
                 <button onclick="sendData('Redenen Wetenschap', 't1')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">Inleveren</button>
             </div>
@@ -377,17 +441,23 @@
             <!-- DEEL 2b - REAL-TIME BORD -->
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="font-black uppercase text-sm text-police italic">Deel 2b: ovt let op de ik-vorm</h2>
+                    <div class="flex items-center">
+                        <span class="realtime-indicator"></span>
+                        <h2 class="font-black uppercase text-sm text-police italic">Deel 2b: ovt let op de ik-vorm</h2>
+                    </div>
                     <button onclick="clear_c2()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
                 </div>
                 <canvas id="c2" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none" style="height:180px; width:100%;"></canvas>
-                <p class="text-[10px] text-green-600 mb-2 italic">✏️ Real-time samenwerking: alle studenten in deze eenheid zien elkaars tekeningen</p>
+                <p class="text-xs text-green-600 mb-2 flex items-center">
+                    <span class="realtime-indicator"></span>
+                    <span>Real-time samenwerking actief - alle tekeningen worden direct gedeeld</span>
+                </p>
                 <textarea id="t2" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij schets..."></textarea>
                 <button onclick="sendData('Situatieschets', 't2')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">Inleveren</button>
             </div>
         </section>
 
-        <!-- DEEL 3: Alleen automatisch corrigeren -->
+        <!-- DEEL 3 -->
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
             <div class="flex justify-between items-center mb-6 border-b pb-4">
                 <h2 class="font-black uppercase text-sm text-police italic underline">Deel 3: Actieve Verleden Tijd (ik-vorm)</h2>
@@ -397,11 +467,21 @@
                 <div class="space-y-2 text-[10px] font-bold bg-slate-50 p-4 rounded-xl h-[350px] overflow-y-auto">
                     <script>
                         const zinnen = [
-                            "De motorrijder is door mij in stabiele zijligging gelegd.", "De kruising is door mij direct afgezet.", "De ambulance is door mij via het OC opgeroepen.",
-                            "Het slachtoffer is door mij voorzichtig aangesproken.", "Het verkeer is door mij op afstand gehouden.", "De motorfiets is door mij op de stoep geplaatst.",
-                            "Het letsel is door mij nauwkeurig bekeken.", "De helm is door mij niet verwijderd.", "De getuigen zijn door mij apart gezet.",
-                            "De rugklachten zijn door mij genoteerd.", "Het bewustzijn is door mij gecontroleerd.", "De vloeistoffen op de weg zijn door mij gemarkeerd.",
-                            "De persoonsgegevens zijn door mij opgevraagd.", "De route is door mij vrijgemaakt.", "Het PV is door mij direct opgesteld."
+                            "De motorrijder is door mij in stabiele zijligging gelegd.",
+                            "De kruising is door mij direct afgezet.",
+                            "De ambulance is door mij via het OC opgeroepen.",
+                            "Het slachtoffer is door mij voorzichtig aangesproken.",
+                            "Het verkeer is door mij op afstand gehouden.",
+                            "De motorfiets is door mij op de stoep geplaatst.",
+                            "Het letsel is door mij nauwkeurig bekeken.",
+                            "De helm is door mij niet verwijderd.",
+                            "De getuigen zijn door mij apart gezet.",
+                            "De rugklachten zijn door mij genoteerd.",
+                            "Het bewustzijn is door mij gecontroleerd.",
+                            "De vloeistoffen op de weg zijn door mij gemarkeerd.",
+                            "De persoonsgegevens zijn door mij opgevraagd.",
+                            "De route is door mij vrijgemaakt.",
+                            "Het PV is door mij direct opgesteld."
                         ];
                         zinnen.forEach((z, i) => document.write(`
                             <div class="flex items-center gap-3 bg-white p-2 rounded border border-slate-200">
@@ -416,7 +496,7 @@
             </div>
         </section>
 
-        <!-- DEEL 4: Melding OC -->
+        <!-- DEEL 4 -->
         <section class="bg-red-700 text-white p-6 rounded-2xl shadow-xl border-l-8 border-yellow-500">
             <h2 class="font-black uppercase text-xs mb-3 text-yellow-400 underline">Deel 4: Melding OC</h2>
             <p class="font-mono text-sm italic leading-relaxed text-white">
@@ -425,45 +505,40 @@
             </p>
         </section>
 
-        <!-- DEEL 5: DAA -->
+        <!-- DEEL 5 -->
         <section class="bg-yellow-50 border-4 border-yellow-400 p-6 rounded-2xl shadow-lg">
             <h2 class="font-black uppercase text-sm mb-4 text-yellow-900 italic text-center underline">Deel 5: Stel uw DAA op</h2>
             <textarea id="daaInput" class="w-full border-2 border-yellow-200 p-5 rounded-xl text-sm h-40 shadow-inner" placeholder="Doel - Aanpak - Analyse..."></textarea>
             <button onclick="sendData('DAA', 'daaInput')" class="w-full bg-yellow-600 text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md">Verstuur DAA naar Livefeed</button>
         </section>
 
-        <!-- DEEL 6: Ter Plaatse -->
+        <!-- DEEL 6 -->
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
             <h2 class="font-black uppercase text-xs mb-4 text-police underline">Deel 6: Ter Plaatse</h2>
             <p class="text-sm italic leading-relaxed mb-6 text-slate-700">
                 Op de kruising zie je een motorfiets liggen en een stukje verderop een persoon in een motorpak en een helm op. 
                 Het slachtoffer geeft aan dat hij onderuit is gegleden in de bocht terwijl hij ongeveer 50 km/u reed.
             </p>
-            <div class="grid grid-cols-3 gap-4">
-                <div class="text-center"><img src="bord50.png" alt="Bord 50" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">bord50.png</span></div>
-                <div class="text-center"><img src="kruispuntgooglemaps.png" alt="Maps" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">maps.png</span></div>
-                <div class="text-center"><img src="overzichtkruispunt.png" alt="Overzicht" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">kruispunt.png</span></div>
-            </div>
         </section>
 
-        <!-- DEEL 7: PV MET VERSTUURKNOP -->
+        <!-- DEEL 7 -->
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
             <h2 class="font-black uppercase text-sm mb-4 text-police italic underline">Deel 7: PV Bevindingen</h2>
             <textarea id="pvInput" class="w-full border-2 p-5 rounded-xl text-sm h-60" placeholder="Stel hier je PV van bevindingen op..."></textarea>
             <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-police text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md italic">Verstuur PV naar Livefeed</button>
         </section>
 
-        <!-- DEEL 8: Feedback Checklist -->
+        <!-- DEEL 8 -->
         <section class="bg-slate-100 p-6 rounded-2xl border-2 border-slate-300 shadow-inner">
             <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic border-b pb-2 text-center">Deel 8: Feedback Checklist</h2>
             <p class="text-[10px] text-slate-500 mb-4 uppercase text-center font-bold italic">Vink aan wat je hebt behandeld in je DAA of PV</p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="feedbackChecklist">
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Dienstvoertuig Positie"> Hoe positioneer je je dienstvoertuig?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Veiligheid Ter Plaatse"> Welke veiligheidsmaatregelen neem je?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="METHANE"> METHANE-methode terugmelding?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Strafbaar Feit"> Welk strafbaar feit is hier sprake?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Partners"> Welke partners inschakelen?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Opsporing"> Welke opsporingsactiviteiten?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Dienstvoertuig Positie"> Hoe positioneer je je dienstvoertuig?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Veiligheid Ter Plaatse"> Welke veiligheidsmaatregelen neem je?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="METHANE"> METHANE-methode terugmelding?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Strafbaar Feit"> Welk strafbaar feit is hier sprake?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Partners"> Welke partners inschakelen?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Opsporing"> Welke opsporingsactiviteiten?</label>
             </div>
         </section>
 
@@ -471,17 +546,10 @@
         <section class="mt-10">
             <div class="flex items-center gap-4 mb-6">
                 <div class="h-px bg-slate-300 flex-1"></div>
-                <div class="flex items-center gap-2">
-                    <span class="relative flex h-3 w-3">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                    </span>
-                    <h2 class="font-black uppercase text-[12px] text-blue-900 tracking-widest italic">Live Feed Eenheidspagina</h2>
-                </div>
+                <h2 class="font-black uppercase text-[12px] text-blue-900 tracking-widest italic">Live Feed Eenheidspagina</h2>
                 <div class="h-px bg-slate-300 flex-1"></div>
             </div>
             <div id="liveFeed" class="min-h-[200px]"></div>
-            <p class="text-[10px] text-slate-400 text-center mt-2 italic">Nieuwe inzendingen verschijnen direct</p>
         </section>
     </div>
 </body>

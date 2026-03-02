@@ -21,7 +21,7 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const LES_ID = "btv_zaandam_volledig";
+        const LES_ID = "btv_zaandam_2026";
 
         window.startLes = () => {
             const naam = document.getElementById('uNaam').value.trim();
@@ -36,10 +36,13 @@
         async function initLive(klas, naam) {
             setupSharedWhiteboard('c1', LES_ID + '_bord1_' + klas, db);
             setupSharedWhiteboard('c2', LES_ID + '_bord2_' + klas, db);
+            
+            // LIVE SYNC VOOR DE TEKSTVELDEN
             setupLiveText('daaInput', LES_ID + '_daa_' + klas, db);
             setupLiveText('pvInput', LES_ID + '_pv_' + klas, db);
             
-            const q = query(collection(db, "btv_2026"), where("klas", "==", klas), orderBy("ts", "desc"));
+            // LIVE FEED ONDERAAN (De verzonden kaarten)
+            const q = query(collection(db, "btv_submissions"), where("klas", "==", klas), orderBy("ts", "desc"));
             onSnapshot(q, (sn) => {
                 const feed = document.getElementById('liveFeed');
                 feed.innerHTML = "";
@@ -68,17 +71,18 @@
         function setupLiveText(elementId, docId, db) {
             const el = document.getElementById(elementId);
             const docRef = doc(db, "live_texts", docId);
-            
+            let isTyping = false;
+
             onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists() && document.activeElement !== el) {
+                if (docSnap.exists() && !isTyping && document.activeElement !== el) {
                     el.value = docSnap.data().content || "";
-                } else if (!docSnap.exists()) {
-                    el.value = ""; 
                 }
             });
 
-            el.addEventListener('input', async () => {
-                await setDoc(docRef, { content: el.value, ts: serverTimestamp() }, { merge: true });
+            el.addEventListener('input', () => {
+                isTyping = true;
+                setDoc(docRef, { content: el.value, ts: serverTimestamp() }, { merge: true })
+                    .then(() => { isTyping = false; });
             });
         }
 
@@ -149,7 +153,7 @@
             const klas = document.getElementById('uKlas').value;
             if(!txt) return alert("Veld is leeg.");
             const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
-            await addDoc(collection(db, "btv_2026"), { naam, klas, type, txt, ts: serverTimestamp(), feedback: gekozen.join(", ") });
+            await addDoc(collection(db, "btv_submissions"), { naam, klas, type, txt, ts: serverTimestamp(), feedback: gekozen.join(", ") });
             alert("Verzonden naar Live Feed!");
         };
 
@@ -159,6 +163,7 @@
                 document.querySelectorAll('textarea').forEach(t => t.value = "");
                 document.getElementById('liveScore').innerText = "0";
                 document.querySelectorAll('#feedbackChecklist input').forEach(c => c.checked = false);
+                // WIS OOK DATABASE RECORDS VOOR DEZE EENHEID
                 await deleteDoc(doc(db, "live_texts", LES_ID + '_daa_' + klas));
                 await deleteDoc(doc(db, "live_texts", LES_ID + '_pv_' + klas));
             }

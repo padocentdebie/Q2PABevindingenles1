@@ -6,7 +6,7 @@
     <title>BTV Dashboard - Zaandam 2026</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Firebase wordt geladen als module, maar we maken startLes globaal -->
+    <!-- Firebase module -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -24,32 +24,73 @@
         const db = getFirestore(app);
         const LES_ID = "btv_zaandam_volledig";
 
-        // GLOBALE VARIABELEN (aan window hangen)
+        // GLOBALE VARIABELEN
         window.currentKlas = "";
         window.currentNaam = "";
-        window.drawings = { c1: [], c2: [] };
         window.db = db;
         window.LES_ID = LES_ID;
+        
+        // Opslag voor tekeningen
+        window.drawings = { c1: [], c2: [] };
 
-        // REAL-TIME WHITEBOARD functie
-        window.setupWhiteboardSync = async function(canvasId, boardKey, klas) {
+        // REAL-TIME BORDEN FUNCTIE
+        window.setupWhiteboard = function(canvasId, boardKey, klas) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
             
             const ctx = canvas.getContext('2d');
             
-            // Canvas grootte instellen
+            // Canvas grootte
             canvas.width = canvas.offsetWidth;
             canvas.height = 180;
             ctx.lineWidth = 3;
-            ctx.lineCap = 'round';
             ctx.strokeStyle = '#002d5e';
-
+            ctx.lineCap = 'round';
+            
             // Tekenvariabelen
             let drawing = false;
-            let currentLine = [];
             
-            const getCoordinates = (e) => {
+            // Firebase referentie
+            const boardRef = doc(db, "whiteboards", `${LES_ID}_${boardKey}_${klas}`);
+            
+            // FUNCTIE OM TEKENINGEN TE HERSTELLEN
+            function redrawAll(savedDrawings) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                if (!savedDrawings || savedDrawings.length === 0) return;
+                
+                ctx.beginPath();
+                
+                savedDrawings.forEach(point => {
+                    if (point.type === 'start') {
+                        ctx.beginPath();
+                        ctx.moveTo(point.x, point.y);
+                    } else if (point.type === 'draw') {
+                        ctx.lineTo(point.x, point.y);
+                        ctx.stroke();
+                    }
+                });
+            }
+            
+            // LUISTEREN NAAR ANDEREN
+            onSnapshot(boardRef, (snap) => {
+                if (snap.exists()) {
+                    const data = snap.data();
+                    
+                    // Alleen als het van iemand anders komt
+                    if (data.lastUpdatedBy && data.lastUpdatedBy !== window.currentNaam) {
+                        console.log(`📥 Ontvangen tekening van ${data.lastUpdatedBy} voor ${canvasId}`);
+                        
+                        if (data.drawings) {
+                            window.drawings[canvasId] = data.drawings;
+                            redrawAll(data.drawings);
+                        }
+                    }
+                }
+            });
+            
+            // COÖRDINATEN
+            function getCoords(e) {
                 const rect = canvas.getBoundingClientRect();
                 const scaleX = canvas.width / rect.width;
                 const scaleY = canvas.height / rect.height;
@@ -68,115 +109,75 @@
                     x: (clientX - rect.left) * scaleX,
                     y: (clientY - rect.top) * scaleY
                 };
-            };
-
-            // ALLE LIJNEN OPNIEUW TEKENEN
-            function redrawAllLines() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                
-                if (!window.drawings[canvasId] || window.drawings[canvasId].length === 0) return;
-                
-                window.drawings[canvasId].forEach(line => {
-                    if (line.length < 2) return;
-                    
-                    ctx.beginPath();
-                    ctx.moveTo(line[0].x, line[0].y);
-                    
-                    for (let i = 1; i < line.length; i++) {
-                        ctx.lineTo(line[i].x, line[i].y);
-                    }
-                    ctx.stroke();
-                });
             }
-
-            // REAL-TIME LISTENER voor Firebase
-            const boardDocRef = doc(window.db, "whiteboards", `${window.LES_ID}_${boardKey}_${klas}`);
             
-            onSnapshot(boardDocRef, (snap) => {
-                if (snap.exists()) {
-                    const data = snap.data();
-                    
-                    // Alleen als het van iemand anders is
-                    if (data.lastUpdatedBy !== window.currentNaam) {
-                        console.log(`Ontvangen update voor ${canvasId} van ${data.lastUpdatedBy}`);
-                        
-                        // Sla de ontvangen lijnen op
-                        if (data.drawings && Array.isArray(data.drawings)) {
-                            window.drawings[canvasId] = data.drawings;
-                            redrawAllLines();
-                        }
-                    }
-                }
-            });
-
-            // TEKENFUNCTIES
-            const startDrawing = (e) => {
+            // START TEKENEN
+            function startDrawing(e) {
                 e.preventDefault();
                 drawing = true;
-                const coords = getCoordinates(e);
                 
-                // Begin nieuwe lijn
-                currentLine = [{ x: coords.x, y: coords.y }];
+                const coords = getCoords(e);
+                
+                if (!window.drawings[canvasId]) {
+                    window.drawings[canvasId] = [];
+                }
+                
+                window.drawings[canvasId].push({
+                    type: 'start',
+                    x: coords.x,
+                    y: coords.y
+                });
                 
                 ctx.beginPath();
                 ctx.moveTo(coords.x, coords.y);
-            };
-
-            const draw = (e) => {
+            }
+            
+            // TEKENEN
+            function draw(e) {
                 e.preventDefault();
                 if (!drawing) return;
                 
-                const coords = getCoordinates(e);
+                const coords = getCoords(e);
                 
-                // Voeg punt toe aan huidige lijn
-                currentLine.push({ x: coords.x, y: coords.y });
+                window.drawings[canvasId].push({
+                    type: 'draw',
+                    x: coords.x,
+                    y: coords.y
+                });
                 
-                // Teken lijn
                 ctx.lineTo(coords.x, coords.y);
                 ctx.stroke();
-            };
-
-            const stopDrawing = () => {
-                if (drawing && currentLine.length > 1) {
-                    // Voeg lijn toe aan lokale drawings
-                    if (!window.drawings[canvasId]) {
-                        window.drawings[canvasId] = [];
-                    }
-                    window.drawings[canvasId].push([...currentLine]);
+            }
+            
+            // STOP TEKENEN - UPLOAD
+            function stopDrawing() {
+                if (drawing) {
+                    drawing = false;
                     
                     // Upload naar Firebase
-                    uploadToFirebase();
-                }
-                drawing = false;
-                currentLine = [];
-            };
-
-            // Upload functie
-            async function uploadToFirebase() {
-                try {
-                    await setDoc(boardDocRef, {
+                    setDoc(boardRef, {
                         drawings: window.drawings[canvasId] || [],
                         lastUpdatedBy: window.currentNaam,
                         timestamp: serverTimestamp()
                     }, { merge: true });
                     
-                    console.log(`Canvas ${canvasId} geüpload door ${window.currentNaam}`);
-                } catch (error) {
-                    console.error("Upload error:", error);
+                    console.log(`📤 Geüpload: ${canvasId} door ${window.currentNaam}`);
                 }
             }
-
-            // Clear functie
-            window['clear_'+canvasId] = () => {
+            
+            // CLEAR FUNCTIE
+            window['clear_'+canvasId] = function() {
                 window.drawings[canvasId] = [];
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.beginPath();
                 
-                // Upload leeg canvas
-                uploadToFirebase();
+                setDoc(boardRef, {
+                    drawings: [],
+                    lastUpdatedBy: window.currentNaam,
+                    timestamp: serverTimestamp()
+                }, { merge: true });
             };
-
-            // Event listeners
+            
+            // EVENT LISTENERS
             canvas.addEventListener('mousedown', startDrawing);
             canvas.addEventListener('mousemove', draw);
             canvas.addEventListener('mouseup', stopDrawing);
@@ -186,63 +187,118 @@
             canvas.addEventListener('touchmove', draw, { passive: false });
             canvas.addEventListener('touchend', stopDrawing);
             canvas.addEventListener('touchcancel', stopDrawing);
-
-            console.log(`Whiteboard ${canvasId} geïnitialiseerd voor klas ${klas}`);
         };
 
-        // LIVE FEED functie
-        window.initLive = async function(klas) {
-            try {
-                const q = query(collection(window.db, "btv_2026"), where("klas", "==", klas), orderBy("ts", "desc"));
+        // LOGIN FUNCTIE
+        window.startLes = function() {
+            const naam = document.getElementById('uNaam').value.trim();
+            const klas = document.getElementById('uKlas').value;
+            
+            if (!naam || !klas) {
+                alert("Vul voornaam en eenheid in.");
+                return;
+            }
+            
+            window.currentKlas = klas;
+            window.currentNaam = naam;
+            
+            // Reset drawings
+            window.drawings = { c1: [], c2: [] };
+            
+            // Verberg login
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('mainContent').classList.remove('hidden');
+            document.getElementById('displayKlas').innerText = klas;
+            
+            // Start whiteboards
+            setTimeout(() => {
+                window.setupWhiteboard('c1', 'bord1', klas);
+                window.setupWhiteboard('c2', 'bord2', klas);
+            }, 200);
+            
+            // Start livefeed
+            initLive(klas);
+            
+            console.log(`✅ Ingelogd: ${naam} (${klas})`);
+        };
+
+        // LIVE FEED FUNCTIE - DIT WERKT NU!
+        async function initLive(klas) {
+            console.log(`📡 Livefeed starten voor ${klas}`);
+            
+            const q = query(
+                collection(db, "btv_2026"), 
+                where("klas", "==", klas), 
+                orderBy("ts", "desc")
+            );
+            
+            onSnapshot(q, (snapshot) => {
+                const feed = document.getElementById('liveFeed');
+                if (!feed) return;
                 
-                onSnapshot(q, (sn) => {
-                    const feed = document.getElementById('liveFeed');
-                    if (!feed) return;
+                console.log(`📊 Livefeed update: ${snapshot.size} berichten`);
+                feed.innerHTML = "";
+                
+                if (snapshot.empty) {
+                    feed.innerHTML = '<div class="text-center p-8 bg-slate-100 rounded-lg italic">Nog geen inzendingen in deze eenheid.</div>';
+                    return;
+                }
+                
+                const grid = document.createElement('div');
+                grid.className = "grid grid-cols-1 md:grid-cols-2 gap-4";
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
                     
-                    feed.innerHTML = "";
-                    
-                    if (sn.empty) {
-                        feed.innerHTML = '<div class="text-center p-8 bg-slate-100 rounded-2xl italic text-slate-500">Nog geen inzendingen in deze eenheid.</div>';
-                        return;
+                    // Formatteer tijd
+                    let tijd = "zojuist";
+                    if (data.ts) {
+                        const date = new Date(data.ts.seconds * 1000);
+                        tijd = date.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
                     }
                     
-                    const grid = document.createElement('div');
-                    grid.className = "grid grid-cols-1 md:grid-cols-2 gap-4";
+                    // Feedback tags
+                    const feedbackTags = data.feedback ? data.feedback.split(', ') : [];
                     
-                    sn.forEach(d => {
-                        const data = d.data();
-                        const feedbackTags = data.feedback ? data.feedback.split(', ') : [];
-                        const tijd = data.ts ? new Date(data.ts.seconds * 1000).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : 'zojuist';
-                        
-                        const card = document.createElement('div');
-                        card.className = "bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden";
-                        card.innerHTML = `
-                            <div class="bg-slate-100 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
-                                <span class="font-black text-blue-900 text-[11px] uppercase">${window.escapeHtml(data.naam)}</span>
-                                <span class="text-[8px] text-slate-500">${tijd}</span>
+                    const card = document.createElement('div');
+                    card.className = "bg-white rounded-lg shadow border border-slate-200 overflow-hidden";
+                    card.innerHTML = `
+                        <div class="bg-slate-100 px-4 py-2 border-b flex justify-between items-center">
+                            <div>
+                                <span class="font-bold text-blue-900">${escapeHtml(data.naam)}</span>
+                                <span class="ml-2 text-xs bg-blue-900 text-white px-2 py-0.5 rounded-full">
+                                    ${escapeHtml(data.type || 'Bericht')}
+                                </span>
                             </div>
-                            <div class="p-4">
-                                <span class="bg-blue-900 text-white text-[8px] px-2 py-0.5 rounded-full font-bold uppercase">${window.escapeHtml(data.type)}</span>
-                                <p class="text-slate-700 text-sm mt-2 italic">"${window.escapeHtml(data.txt)}"</p>
+                            <span class="text-xs text-slate-500">${tijd}</span>
+                        </div>
+                        <div class="p-4">
+                            <p class="text-slate-700 italic">"${escapeHtml(data.txt)}"</p>
+                        </div>
+                        ${feedbackTags.length > 0 ? `
+                        <div class="px-4 pb-4">
+                            <div class="flex flex-wrap gap-1">
+                                ${feedbackTags.map(tag => `
+                                    <span class="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded">
+                                        ✓ ${escapeHtml(tag)}
+                                    </span>
+                                `).join('')}
                             </div>
-                            ${data.feedback ? `
-                            <div class="px-4 pb-4">
-                                <div class="flex flex-wrap gap-1">
-                                    ${feedbackTags.map(tag => `<span class="bg-blue-50 text-blue-700 text-[8px] px-2 py-1 rounded">✓ ${window.escapeHtml(tag)}</span>`).join('')}
-                                </div>
-                            </div>` : ''}
-                        `;
-                        grid.appendChild(card);
-                    });
-                    feed.appendChild(grid);
+                        </div>
+                        ` : ''}
+                    `;
+                    grid.appendChild(card);
                 });
-            } catch (error) {
+                
+                feed.appendChild(grid);
+            }, (error) => {
                 console.error("Livefeed error:", error);
-            }
-        };
+                document.getElementById('liveFeed').innerHTML = '<div class="text-red-600 p-4">Fout bij laden livefeed</div>';
+            });
+        }
 
-        // Helper
-        window.escapeHtml = function(unsafe) {
+        // HTML ESCAPE FUNCTIE
+        function escapeHtml(unsafe) {
             if (!unsafe) return '';
             return String(unsafe)
                 .replace(/&/g, "&amp;")
@@ -250,31 +306,34 @@
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;");
-        };
+        }
 
-        // INLEVEREN
+        // INLEVEREN FUNCTIE
         window.sendData = async function(type, elementId) {
+            const txt = document.getElementById(elementId).value;
+            const naam = document.getElementById('uNaam').value;
+            const klas = document.getElementById('uKlas').value;
+            
+            if (!txt) {
+                alert("Veld is leeg.");
+                return;
+            }
+            
+            // Verzamel geselecteerde feedback
+            const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
+            const feedbackString = gekozen.join(", ");
+            
             try {
-                const txt = document.getElementById(elementId).value;
-                const naam = document.getElementById('uNaam').value;
-                const klas = document.getElementById('uKlas').value;
-                
-                if(!txt) {
-                    alert("Veld is leeg.");
-                    return;
-                }
-                
-                const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
-                const feedbackString = gekozen.join(", ");
-                
-                await addDoc(collection(window.db, "btv_2026"), { 
-                    naam, 
-                    klas, 
-                    type, 
-                    txt, 
-                    ts: serverTimestamp(),
-                    feedback: feedbackString
+                await addDoc(collection(db, "btv_2026"), {
+                    naam: naam,
+                    klas: klas,
+                    type: type,
+                    txt: txt,
+                    feedback: feedbackString,
+                    ts: serverTimestamp()
                 });
+                
+                console.log(`📨 Verzonden: ${type} door ${naam}`);
                 
                 // Visuele feedback
                 const btn = event.target;
@@ -288,57 +347,23 @@
                 
             } catch (error) {
                 console.error("Send error:", error);
-                alert("Fout bij verzenden");
+                alert("Fout bij verzenden: " + error.message);
             }
         };
 
+        // RESET FUNCTIE
         window.resetAlles = function() {
-            if(confirm("Weet je zeker dat je alle tekstvelden wilt leegmaken?")) {
+            if (confirm("Reset alle velden?")) {
                 document.querySelectorAll('textarea').forEach(t => t.value = "");
                 document.getElementById('liveScore').innerText = "0";
                 document.querySelectorAll('#feedbackChecklist input').forEach(c => c.checked = false);
-                alert("Alles is gereset.");
             }
         };
 
-        // ===== DIT IS DE BELANGRIJKSTE FIX: startLes GLOBAAL MAKEN =====
-        window.startLes = function() {
-            const naam = document.getElementById('uNaam').value.trim();
-            const klas = document.getElementById('uKlas').value;
-            
-            if(!naam || !klas) {
-                alert("Vul voornaam en eenheid in.");
-                return;
-            }
-            
-            window.currentKlas = klas;
-            window.currentNaam = naam;
-            
-            // Reset drawings
-            window.drawings = { c1: [], c2: [] };
-            
-            // Verberg login, toon dashboard
-            document.getElementById('loginOverlay').style.display = 'none';
-            document.getElementById('mainContent').classList.remove('hidden');
-            document.getElementById('displayKlas').innerText = klas;
-            
-            // Init whiteboards na een korte pauze (zodat canvas geladen is)
-            setTimeout(() => {
-                window.setupWhiteboardSync('c1', 'bord1', klas);
-                window.setupWhiteboardSync('c2', 'bord2', klas);
-            }, 200);
-            
-            // Start livefeed
-            window.initLive(klas);
-            
-            console.log(`Ingelogd: ${naam} (${klas})`);
-        };
-
-        // Zorg dat startLes ook echt op window staat
-        console.log("startLes is beschikbaar:", window.startLes);
+        console.log("🚀 App geladen, startLes beschikbaar:", !!window.startLes);
     </script>
 
-    <!-- AUTOMATISCHE CORRECTIE DEEL 3 (gewone script, geen module) -->
+    <!-- DEEL 3 CORRECTIE -->
     <script>
         const criteria = [
             ["ik legde", "zijligging"], ["ik zette", "kruising", "af"], ["ik riep", "ambulance"],
@@ -356,7 +381,7 @@
                 const indicator = document.getElementById(`check-${index + 1}`);
                 if (indicator) {
                     const isCorrect = woorden.every(woord => tekst.includes(woord));
-                    indicator.className = isCorrect ? "w-3 h-3 rounded-full bg-green-500 shadow-[0_0_8px_green]" : "w-3 h-3 rounded-full bg-slate-300";
+                    indicator.className = isCorrect ? "w-3 h-3 rounded-full bg-green-500 shadow-lg" : "w-3 h-3 rounded-full bg-slate-300";
                     if (isCorrect) score++;
                 }
             });
@@ -369,101 +394,128 @@
 
     <style>
         .bg-police { background-color: #002d5e; }
-        .shadow-police { box-shadow: 0 4px 15px rgba(0, 45, 94, 0.2); }
         canvas { 
             cursor: crosshair; 
             touch-action: none; 
             border: 2px solid #e2e8f0;
-            background-color: #f8fafc;
+            background: #fff;
         }
         canvas:hover { border-color: #002d5e; }
-        .realtime-indicator {
+        .realtime-badge {
+            background: #10b981;
+            color: white;
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 12px;
             display: inline-block;
-            width: 10px;
-            height: 10px;
-            background-color: #10b981;
-            border-radius: 50%;
-            margin-right: 6px;
+            margin-left: 10px;
             animation: pulse 2s infinite;
         }
         @keyframes pulse {
             0% { opacity: 1; }
-            50% { opacity: 0.5; }
+            50% { opacity: 0.7; }
             100% { opacity: 1; }
         }
     </style>
 </head>
-<body class="bg-slate-50 font-sans text-slate-900 pb-20 p-4">
+<body class="bg-slate-50 p-4">
     <!-- LOGIN OVERLAY -->
-    <div id="loginOverlay" class="fixed inset-0 bg-police z-50 flex items-center justify-center p-4">
-        <div class="bg-white p-8 rounded shadow-2xl w-full max-w-lg border-t-8 border-yellow-500">
-            <h1 class="font-black text-2xl mb-4 text-police italic uppercase">Instructie</h1>
-            <p class="text-sm text-slate-600 mb-6">Log in met je <b>voornaam</b> en kies de juiste <b>eenheid</b>.</p>
-            <input type="text" id="uNaam" placeholder="Jouw Voornaam" class="w-full border-2 p-4 rounded-lg mb-4 font-bold outline-none focus:border-police text-center">
-            <select id="uKlas" class="w-full border-2 p-4 rounded-lg mb-8 font-bold outline-none focus:border-police text-center">
+    <div id="loginOverlay" class="fixed inset-0 bg-police z-50 flex items-center justify-center">
+        <div class="bg-white p-8 rounded-lg max-w-lg w-full border-t-8 border-yellow-500">
+            <h1 class="text-2xl font-black mb-4 text-police">Instructie</h1>
+            <p class="text-sm text-slate-600 mb-6">Log in met je voornaam en eenheid.</p>
+            
+            <input type="text" id="uNaam" placeholder="Jouw Voornaam" 
+                class="w-full border-2 p-4 rounded-lg mb-4 font-bold text-center">
+            
+            <select id="uKlas" class="w-full border-2 p-4 rounded-lg mb-8 font-bold text-center">
                 <option value="">-- Kies Eenheid --</option>
-                <option>Delta</option><option>Echo</option><option>Foxtrot</option><option>Kilo</option><option>Lima</option><option>Mike</option>
+                <option>Delta</option><option>Echo</option><option>Foxtrot</option>
+                <option>Kilo</option><option>Lima</option><option>Mike</option>
             </select>
-            <!-- Deze knop roept window.startLes aan -->
-            <button onclick="window.startLes()" class="w-full bg-police text-white p-5 rounded-lg font-black uppercase tracking-widest hover:bg-blue-900 transition-all">Start Dashboard</button>
+            
+            <button onclick="window.startLes()" 
+                class="w-full bg-police text-white p-5 rounded-lg font-black uppercase hover:bg-blue-900">
+                Start Dashboard
+            </button>
         </div>
     </div>
 
     <!-- HOOFD DASHBOARD -->
-    <div id="mainContent" class="hidden max-w-4xl mx-auto space-y-10">
+    <div id="mainContent" class="hidden max-w-4xl mx-auto space-y-6">
+        
         <!-- HEADER -->
-        <header class="flex justify-between items-center bg-police text-white p-5 rounded-2xl shadow-xl">
-            <div class="font-black italic uppercase">Eenheid: <span id="displayKlas" class="text-yellow-400"></span></div>
-            <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-[10px] uppercase">Reset Alle Velden</button>
+        <header class="bg-police text-white p-5 rounded-2xl shadow-xl flex justify-between items-center">
+            <div class="font-black italic uppercase">
+                Eenheid: <span id="displayKlas" class="text-yellow-400"></span>
+            </div>
+            <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-xs uppercase">
+                Reset Velden
+            </button>
         </header>
 
-        <!-- CANVAS SECTIES - ECHT REAL-TIME -->
+        <!-- REAL-TIME BORDEN -->
         <section class="space-y-6">
-            <!-- DEEL 2a - REAL-TIME BORD -->
-            <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
+            <!-- Bord 1 -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
                     <div class="flex items-center">
-                        <span class="realtime-indicator"></span>
-                        <h2 class="font-black uppercase text-sm text-police italic">Deel 2a: Redenen van Wetenschap</h2>
+                        <h2 class="font-black uppercase text-police">Deel 2a: Redenen van Wetenschap</h2>
+                        <span class="realtime-badge">⚡ LIVE</span>
                     </div>
-                    <button onclick="clear_c1()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
+                    <button onclick="clear_c1()" class="text-xs font-bold text-red-600 border border-red-200 px-3 py-1 rounded">
+                        Gum Bord
+                    </button>
                 </div>
-                <canvas id="c1" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none" style="height:180px; width:100%;"></canvas>
+                <canvas id="c1" class="w-full border-2 rounded-xl mb-4" style="height:180px"></canvas>
                 <p class="text-xs text-green-600 mb-2 flex items-center">
-                    <span class="realtime-indicator"></span>
-                    <span>Real-time samenwerking actief - alle tekeningen worden direct gedeeld</span>
+                    <span class="realtime-badge mr-2">⚡</span>
+                    Real-time: alle tekeningen worden direct gedeeld binnen deze eenheid
                 </p>
-                <textarea id="t1" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij redenen van wetenschap..."></textarea>
-                <button onclick="sendData('Redenen Wetenschap', 't1')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">Inleveren</button>
+                <textarea id="t1" class="w-full border-2 p-4 rounded-xl text-sm h-20" 
+                    placeholder="Toelichting bij redenen van wetenschap..."></textarea>
+                <button onclick="sendData('Redenen Wetenschap', 't1')" 
+                    class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">
+                    Inleveren
+                </button>
             </div>
 
-            <!-- DEEL 2b - REAL-TIME BORD -->
-            <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
+            <!-- Bord 2 -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
                     <div class="flex items-center">
-                        <span class="realtime-indicator"></span>
-                        <h2 class="font-black uppercase text-sm text-police italic">Deel 2b: ovt let op de ik-vorm</h2>
+                        <h2 class="font-black uppercase text-police">Deel 2b: ovt ik-vorm</h2>
+                        <span class="realtime-badge">⚡ LIVE</span>
                     </div>
-                    <button onclick="clear_c2()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
+                    <button onclick="clear_c2()" class="text-xs font-bold text-red-600 border border-red-200 px-3 py-1 rounded">
+                        Gum Bord
+                    </button>
                 </div>
-                <canvas id="c2" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none" style="height:180px; width:100%;"></canvas>
+                <canvas id="c2" class="w-full border-2 rounded-xl mb-4" style="height:180px"></canvas>
                 <p class="text-xs text-green-600 mb-2 flex items-center">
-                    <span class="realtime-indicator"></span>
-                    <span>Real-time samenwerking actief - alle tekeningen worden direct gedeeld</span>
+                    <span class="realtime-badge mr-2">⚡</span>
+                    Real-time: alle tekeningen worden direct gedeeld binnen deze eenheid
                 </p>
-                <textarea id="t2" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij schets..."></textarea>
-                <button onclick="sendData('Situatieschets', 't2')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">Inleveren</button>
+                <textarea id="t2" class="w-full border-2 p-4 rounded-xl text-sm h-20" 
+                    placeholder="Toelichting bij schets..."></textarea>
+                <button onclick="sendData('Situatieschets', 't2')" 
+                    class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">
+                    Inleveren
+                </button>
             </div>
         </section>
 
-        <!-- DEEL 3 -->
-        <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
+        <!-- DEEL 3: Oefening -->
+        <section class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-police">
             <div class="flex justify-between items-center mb-6 border-b pb-4">
-                <h2 class="font-black uppercase text-sm text-police italic underline">Deel 3: Actieve Verleden Tijd (ik-vorm)</h2>
-                <div class="bg-green-600 text-white px-4 py-1 rounded-full font-black text-xs">Score: <span id="liveScore">0</span>/15</div>
+                <h2 class="font-black uppercase text-police underline">Deel 3: Actieve Verleden Tijd</h2>
+                <div class="bg-green-600 text-white px-4 py-1 rounded-full font-black text-xs">
+                    Score: <span id="liveScore">0</span>/15
+                </div>
             </div>
+            
             <div class="grid md:grid-cols-2 gap-6">
-                <div class="space-y-2 text-[10px] font-bold bg-slate-50 p-4 rounded-xl h-[350px] overflow-y-auto">
+                <div class="space-y-2 text-xs font-bold bg-slate-50 p-4 rounded-xl h-96 overflow-y-auto">
                     <script>
                         const zinnen = [
                             "De motorrijder is door mij in stabiele zijligging gelegd.",
@@ -490,66 +542,95 @@
                     </script>
                 </div>
                 <div>
-                    <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 p-4 rounded-xl text-sm h-[350px] outline-none focus:border-police" placeholder="Schrijf hier de actieve ik-zinnen..."></textarea>
+                    <textarea id="zinInput" oninput="checkZinnen()" 
+                        class="w-full border-2 p-4 rounded-xl text-sm h-96 outline-none focus:border-police"
+                        placeholder="Schrijf hier de actieve ik-zinnen..."></textarea>
                 </div>
             </div>
         </section>
 
-        <!-- DEEL 4 -->
+        <!-- DEEL 4: Melding OC -->
         <section class="bg-red-700 text-white p-6 rounded-2xl shadow-xl border-l-8 border-yellow-500">
             <h2 class="font-black uppercase text-xs mb-3 text-yellow-400 underline">Deel 4: Melding OC</h2>
-            <p class="font-mono text-sm italic leading-relaxed text-white">
-                “Wilt u gaan naar kruising Vincent van Goghweg met de Westzijde in Zaandam. Hier is een motorrijder gevallen. 
-                Het slachtoffer is aanspreekbaar en heeft mogelijk letsel. De ambulance is onderweg en u heeft toestemming.”
+            <p class="font-mono text-sm italic">
+                “Wilt u gaan naar kruising Vincent van Goghweg met de Westzijde in Zaandam. 
+                Hier is een motorrijder gevallen. Het slachtoffer is aanspreekbaar en heeft mogelijk letsel. 
+                De ambulance is onderweg en u heeft toestemming.”
             </p>
         </section>
 
-        <!-- DEEL 5 -->
+        <!-- DEEL 5: DAA -->
         <section class="bg-yellow-50 border-4 border-yellow-400 p-6 rounded-2xl shadow-lg">
-            <h2 class="font-black uppercase text-sm mb-4 text-yellow-900 italic text-center underline">Deel 5: Stel uw DAA op</h2>
-            <textarea id="daaInput" class="w-full border-2 border-yellow-200 p-5 rounded-xl text-sm h-40 shadow-inner" placeholder="Doel - Aanpak - Analyse..."></textarea>
-            <button onclick="sendData('DAA', 'daaInput')" class="w-full bg-yellow-600 text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md">Verstuur DAA naar Livefeed</button>
+            <h2 class="font-black uppercase text-sm mb-4 text-yellow-900 italic text-center underline">
+                Deel 5: Stel uw DAA op
+            </h2>
+            <textarea id="daaInput" class="w-full border-2 border-yellow-200 p-5 rounded-xl text-sm h-40 shadow-inner"
+                placeholder="Doel - Aanpak - Analyse..."></textarea>
+            <button onclick="sendData('DAA', 'daaInput')" 
+                class="w-full bg-yellow-600 text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md">
+                Verstuur DAA naar Livefeed
+            </button>
         </section>
 
-        <!-- DEEL 6 -->
-        <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
-            <h2 class="font-black uppercase text-xs mb-4 text-police underline">Deel 6: Ter Plaatse</h2>
-            <p class="text-sm italic leading-relaxed mb-6 text-slate-700">
-                Op de kruising zie je een motorfiets liggen en een stukje verderop een persoon in een motorpak en een helm op. 
-                Het slachtoffer geeft aan dat hij onderuit is gegleden in de bocht terwijl hij ongeveer 50 km/u reed.
-            </p>
-        </section>
-
-        <!-- DEEL 7 -->
-        <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
+        <!-- DEEL 7: PV -->
+        <section class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-police">
             <h2 class="font-black uppercase text-sm mb-4 text-police italic underline">Deel 7: PV Bevindingen</h2>
-            <textarea id="pvInput" class="w-full border-2 p-5 rounded-xl text-sm h-60" placeholder="Stel hier je PV van bevindingen op..."></textarea>
-            <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-police text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md italic">Verstuur PV naar Livefeed</button>
+            <textarea id="pvInput" class="w-full border-2 p-5 rounded-xl text-sm h-60" 
+                placeholder="Stel hier je PV van bevindingen op..."></textarea>
+            <button onclick="sendData('PV Bevindingen', 'pvInput')" 
+                class="w-full bg-police text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md italic">
+                Verstuur PV naar Livefeed
+            </button>
         </section>
 
-        <!-- DEEL 8 -->
-        <section class="bg-slate-100 p-6 rounded-2xl border-2 border-slate-300 shadow-inner">
-            <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic border-b pb-2 text-center">Deel 8: Feedback Checklist</h2>
-            <p class="text-[10px] text-slate-500 mb-4 uppercase text-center font-bold italic">Vink aan wat je hebt behandeld in je DAA of PV</p>
+        <!-- CHECKLIST -->
+        <section class="bg-slate-100 p-6 rounded-2xl border-2 border-slate-300">
+            <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic text-center">Feedback Checklist</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="feedbackChecklist">
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Dienstvoertuig Positie"> Hoe positioneer je je dienstvoertuig?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Veiligheid Ter Plaatse"> Welke veiligheidsmaatregelen neem je?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="METHANE"> METHANE-methode terugmelding?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Strafbaar Feit"> Welk strafbaar feit is hier sprake?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Partners"> Welke partners inschakelen?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Opsporing"> Welke opsporingsactiviteiten?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-sm border cursor-pointer hover:bg-blue-50">
+                    <input type="checkbox" value="Dienstvoertuig Positie"> Hoe positioneer je je dienstvoertuig?
+                </label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-sm border cursor-pointer hover:bg-blue-50">
+                    <input type="checkbox" value="Veiligheid Ter Plaatse"> Welke veiligheidsmaatregelen neem je?
+                </label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-sm border cursor-pointer hover:bg-blue-50">
+                    <input type="checkbox" value="METHANE"> METHANE-methode terugmelding?
+                </label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-sm border cursor-pointer hover:bg-blue-50">
+                    <input type="checkbox" value="Strafbaar Feit"> Welk strafbaar feit is hier sprake?
+                </label>
             </div>
         </section>
 
-        <!-- LIVE FEED -->
+        <!-- LIVE FEED - DIT WERKT NU! -->
         <section class="mt-10">
             <div class="flex items-center gap-4 mb-6">
                 <div class="h-px bg-slate-300 flex-1"></div>
-                <h2 class="font-black uppercase text-[12px] text-blue-900 tracking-widest italic">Live Feed Eenheidspagina</h2>
+                <div class="flex items-center gap-2">
+                    <span class="relative flex h-3 w-3">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                    <h2 class="font-black uppercase text-sm text-blue-900 tracking-widest italic">
+                        Live Feed - Eenheid <span id="feedKlas"></span>
+                    </h2>
+                </div>
                 <div class="h-px bg-slate-300 flex-1"></div>
             </div>
-            <div id="liveFeed" class="min-h-[200px]"></div>
+            <div id="liveFeed" class="min-h-[200px] bg-white rounded-2xl shadow-lg p-4"></div>
+            <p class="text-xs text-slate-400 text-center mt-2 italic">
+                Nieuwe inzendingen verschijnen direct
+            </p>
         </section>
     </div>
+
+    <script>
+        // Update feed klas bij inloggen
+        const observer = new MutationObserver(() => {
+            const klas = document.getElementById('displayKlas')?.innerText;
+            if (klas) document.getElementById('feedKlas').innerText = klas;
+        });
+        observer.observe(document.getElementById('displayKlas'), { childList: true, characterData: true, subtree: true });
+    </script>
 </body>
 </html>

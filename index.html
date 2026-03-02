@@ -8,7 +8,7 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy, setDoc, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBRq1HFmhrpW_EMMZwpURrbTArz-L5iWT4",
@@ -34,22 +34,19 @@
         };
 
         async function initLive(klas, naam) {
-            setupWhiteboard('c1', LES_ID + '_bord1_' + klas, db);
-            setupWhiteboard('c2', LES_ID + '_bord2_' + klas, db);
+            setupSharedWhiteboard('c1', LES_ID + '_bord1_' + klas, db);
+            setupSharedWhiteboard('c2', LES_ID + '_bord2_' + klas, db);
             
             const q = query(collection(db, "btv_2026"), where("klas", "==", klas), orderBy("ts", "desc"));
             onSnapshot(q, (sn) => {
                 const feed = document.getElementById('liveFeed');
                 feed.innerHTML = "";
-                
-                // Grid wrapper voor betere leesbaarheid per klas
                 const grid = document.createElement('div');
                 grid.className = "grid grid-cols-1 md:grid-cols-2 gap-4";
                 
                 sn.forEach(d => {
                     const data = d.data();
                     const feedbackTags = data.feedback ? data.feedback.split(', ') : [];
-                    
                     const card = `
                         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                             <div class="bg-slate-100 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
@@ -73,15 +70,105 @@
             });
         }
 
+        async function setupSharedWhiteboard(canvasId, docId, db) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = 180;
+            
+            let drawing = false;
+            let currentPath = [];
+            window[`mode_${canvasId}`] = 'draw'; 
+
+            const docRef = doc(db, "whiteboards", docId);
+
+            onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    renderBoard(ctx, canvas, data.elements || []);
+                }
+            });
+
+            function renderBoard(context, can, elements) {
+                context.clearRect(0, 0, can.width, can.height);
+                elements.forEach(el => {
+                    if (el.type === 'path') {
+                        context.beginPath();
+                        context.lineWidth = 3; context.lineCap = 'round'; context.strokeStyle = '#002d5e';
+                        el.points.forEach((p, i) => {
+                            if (i === 0) context.moveTo(p.x, p.y);
+                            else context.lineTo(p.x, p.y);
+                        });
+                        context.stroke();
+                    } else if (el.type === 'text') {
+                        context.font = "bold 14px Arial";
+                        context.fillStyle = "#002d5e";
+                        context.fillText(el.content, el.x, el.y);
+                    }
+                });
+            }
+
+            const getP = (e) => {
+                const r = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: clientX - r.left, y: clientY - r.top };
+            };
+
+            canvas.onmousedown = (e) => {
+                const p = getP(e);
+                if (window[`mode_${canvasId}`] === 'text') {
+                    const txt = prompt("Voer tekst in voor op het bord:");
+                    if (txt) {
+                        updateDoc(docRef, { elements: arrayUnion({ type: 'text', content: txt, x: p.x, y: p.y }) })
+                        .catch(() => setDoc(docRef, { elements: [{ type: 'text', content: txt, x: p.x, y: p.y }] }));
+                    }
+                } else {
+                    drawing = true;
+                    ctx.beginPath(); ctx.moveTo(p.x, p.y);
+                    currentPath = [p];
+                }
+            };
+
+            canvas.onmousemove = (e) => {
+                if (!drawing) return;
+                const p = getP(e);
+                currentPath.push(p);
+                ctx.lineWidth = 3; ctx.strokeStyle = '#002d5e';
+                ctx.lineTo(p.x, p.y); ctx.stroke();
+            };
+
+            const stopDrawing = async () => {
+                if (!drawing) return;
+                drawing = false;
+                await updateDoc(docRef, { elements: arrayUnion({ type: 'path', points: currentPath }) })
+                .catch(() => setDoc(docRef, { elements: [{ type: 'path', points: currentPath }] }));
+            };
+
+            window.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); canvas.onmousedown(e); }, {passive:false});
+            canvas.addEventListener('touchmove', (e) => { e.preventDefault(); canvas.onmousemove(e); }, {passive:false});
+            canvas.addEventListener('touchend', stopDrawing);
+
+            window['clear_' + canvasId] = async () => {
+                if(confirm("Bord leegmaken voor de hele eenheid?")) {
+                    await setDoc(docRef, { elements: [] });
+                }
+            };
+
+            window['setMode_' + canvasId] = (m) => {
+                window[`mode_${canvasId}`] = m;
+                canvas.style.cursor = (m === 'text') ? 'text' : 'crosshair';
+            };
+        }
+
         window.sendData = async (type, elementId) => {
             const txt = document.getElementById(elementId).value;
             const naam = document.getElementById('uNaam').value;
             const klas = document.getElementById('uKlas').value;
             if(!txt) return alert("Veld is leeg.");
-            
             const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
             const feedbackString = gekozen.join(", ");
-            
             await addDoc(collection(db, "btv_2026"), { 
                 naam, klas, type, txt, ts: serverTimestamp(),
                 feedback: feedbackString
@@ -94,7 +181,6 @@
                 document.querySelectorAll('textarea').forEach(t => t.value = "");
                 document.getElementById('liveScore').innerText = "0";
                 document.querySelectorAll('#feedbackChecklist input').forEach(c => c.checked = false);
-                alert("Alles is gereset.");
             }
         };
     </script>
@@ -118,20 +204,6 @@
                 if (isCorrect) score++;
             });
             document.getElementById('liveScore').innerText = score;
-        }
-
-        function setupWhiteboard(id, docName, db) {
-            const c = document.getElementById(id); const ctx = c.getContext('2d');
-            c.width = c.offsetWidth; c.height = 180;
-            let draw = false; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#002d5e';
-            const getP = (e) => { const r = c.getBoundingClientRect(); return { x: (e.touches?.[0].clientX || e.clientX) - r.left, y: (e.touches?.[0].clientY || e.clientY) - r.top }; };
-            c.onmousedown = (e) => { draw=true; ctx.beginPath(); const p=getP(e); ctx.moveTo(p.x, p.y); };
-            c.onmousemove = (e) => { if(!draw) return; const p=getP(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
-            window['clear_'+id] = () => { ctx.clearRect(0,0,c.width,c.height); ctx.beginPath(); };
-            const stop = async () => { if(!draw) return; draw=false; };
-            window.addEventListener('mouseup', stop);
-            c.addEventListener('touchstart', (e) => { draw=true; ctx.beginPath(); const p=getP(e); ctx.moveTo(p.x, p.y); e.preventDefault(); }, {passive:false});
-            c.addEventListener('touchmove', (e) => { if(!draw) return; const p=getP(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); }, {passive:false});
         }
     </script>
 
@@ -166,7 +238,11 @@
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="font-black uppercase text-sm text-police italic">Deel 2a: Redenen van Wetenschap</h2>
-                    <button onclick="clear_c1()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
+                    <div class="flex gap-1">
+                        <button onclick="setMode_c1('draw')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">✏️</button>
+                        <button onclick="setMode_c1('text')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">⌨️</button>
+                        <button onclick="clear_c1()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
+                    </div>
                 </div>
                 <canvas id="c1" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none"></canvas>
                 <textarea id="t1" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij redenen van wetenschap..."></textarea>
@@ -176,7 +252,11 @@
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="font-black uppercase text-sm text-police italic">Deel 2b: ovt let op de ik-vorm</h2>
-                    <button onclick="clear_c2()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
+                    <div class="flex gap-1">
+                        <button onclick="setMode_c2('draw')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">✏️</button>
+                        <button onclick="setMode_c2('text')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">⌨️</button>
+                        <button onclick="clear_c2()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
+                    </div>
                 </div>
                 <canvas id="c2" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none"></canvas>
                 <textarea id="t2" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij schets..."></textarea>
@@ -213,8 +293,7 @@
         <section class="bg-red-700 text-white p-6 rounded-2xl shadow-xl border-l-8 border-yellow-500">
             <h2 class="font-black uppercase text-xs mb-3 text-yellow-400 underline">Deel 4: Melding OC</h2>
             <p class="font-mono text-sm italic leading-relaxed text-white">
-                “Wilt u gaan naar kruising Vincent van Goghweg met de Westzijde in Zaandam. Hier is een motorrijder gevallen. 
-                Het slachtoffer is aanspreekbaar en heeft mogelijk letsel. De ambulance is onderweg en u heeft toestemming.”
+                “Wilt u gaan naar kruising Vincent van Goghweg met de Westzijde in Zaandam. Hier is een motorrijder gevallen. Het slachtoffer is aanspreekbaar en heeft mogelijk letsel. De ambulance is onderweg en u heeft toestemming.”
             </p>
         </section>
 
@@ -227,8 +306,7 @@
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
             <h2 class="font-black uppercase text-xs mb-4 text-police underline">Deel 6: Ter Plaatse</h2>
             <p class="text-sm italic leading-relaxed mb-6 text-slate-700">
-                Op de kruising zie je een motorfiets liggen en een stukje verderop een persoon in een motorpak en een helm op. 
-                Het slachtoffer geeft aan dat hij onderuit is gegleden in de bocht terwijl hij ongeveer 50 km/u reed.
+                Op de kruising zie je een motorfiets liggen en een stukje verderop een persoon in een motorpak en een helm op. Het slachtoffer geeft aan dat hij onderuit is gegleden in de bocht terwijl hij ongeveer 50 km/u reed.
             </p>
             <div class="grid grid-cols-3 gap-4">
                 <div class="text-center"><img src="bord50.png" alt="Bord 50" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">bord50.png</span></div>
@@ -266,6 +344,5 @@
         </section>
 
     </div>
-
 </body>
 </html>

@@ -37,6 +37,10 @@
             setupSharedWhiteboard('c1', LES_ID + '_bord1_' + klas, db);
             setupSharedWhiteboard('c2', LES_ID + '_bord2_' + klas, db);
             
+            // NIEUW: Real-time tekst synchronisatie voor DAA en PV
+            setupLiveText('daaInput', LES_ID + '_daa_' + klas, db);
+            setupLiveText('pvInput', LES_ID + '_pv_' + klas, db);
+            
             const q = query(collection(db, "btv_2026"), where("klas", "==", klas), orderBy("ts", "desc"));
             onSnapshot(q, (sn) => {
                 const feed = document.getElementById('liveFeed');
@@ -67,6 +71,26 @@
                     grid.innerHTML += card;
                 });
                 feed.appendChild(grid);
+            });
+        }
+
+        // Real-time tekst functie
+        function setupLiveText(elementId, docId, db) {
+            const el = document.getElementById(elementId);
+            const docRef = doc(db, "live_texts", docId);
+            let typingTimer;
+
+            onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists() && document.activeElement !== el) {
+                    el.value = docSnap.data().content;
+                }
+            });
+
+            el.addEventListener('input', () => {
+                clearTimeout(typingTimer);
+                typingTimer = setTimeout(async () => {
+                    await setDoc(docRef, { content: el.value, ts: serverTimestamp() }, { merge: true });
+                }, 500); 
             });
         }
 

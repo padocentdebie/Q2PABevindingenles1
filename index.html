@@ -8,7 +8,7 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy, setDoc, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, serverTimestamp, collection, addDoc, query, where, orderBy, setDoc, updateDoc, arrayUnion, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBRq1HFmhrpW_EMMZwpURrbTArz-L5iWT4",
@@ -36,8 +36,6 @@
         async function initLive(klas, naam) {
             setupSharedWhiteboard('c1', LES_ID + '_bord1_' + klas, db);
             setupSharedWhiteboard('c2', LES_ID + '_bord2_' + klas, db);
-            
-            // NIEUW: Real-time tekst synchronisatie voor DAA en PV
             setupLiveText('daaInput', LES_ID + '_daa_' + klas, db);
             setupLiveText('pvInput', LES_ID + '_pv_' + klas, db);
             
@@ -47,7 +45,6 @@
                 feed.innerHTML = "";
                 const grid = document.createElement('div');
                 grid.className = "grid grid-cols-1 md:grid-cols-2 gap-4";
-                
                 sn.forEach(d => {
                     const data = d.data();
                     const feedbackTags = data.feedback ? data.feedback.split(', ') : [];
@@ -57,15 +54,9 @@
                                 <span class="font-black text-blue-900 text-[11px] uppercase tracking-tighter">${data.naam}</span>
                                 <span class="bg-blue-900 text-white text-[9px] px-2 py-0.5 rounded-full font-bold uppercase">${data.type}</span>
                             </div>
-                            <div class="p-4 flex-grow">
-                                <p class="text-slate-700 text-sm leading-relaxed italic">"${data.txt}"</p>
-                            </div>
-                            ${data.feedback ? `
-                            <div class="p-4 bg-blue-50/50 border-t border-blue-100">
-                                <span class="text-[9px] font-black text-blue-800 uppercase block mb-2">Behandelde onderdelen:</span>
-                                <div class="flex flex-wrap gap-1">
-                                    ${feedbackTags.map(tag => `<span class="bg-white border border-blue-200 text-blue-700 text-[9px] px-2 py-1 rounded font-bold">✓ ${tag}</span>`).join('')}
-                                </div>
+                            <div class="p-4 flex-grow"><p class="text-slate-700 text-sm leading-relaxed italic">"${data.txt}"</p></div>
+                            ${data.feedback ? `<div class="p-4 bg-blue-50/50 border-t border-blue-100">
+                                <div class="flex flex-wrap gap-1">${feedbackTags.map(tag => `<span class="bg-white border border-blue-200 text-blue-700 text-[9px] px-2 py-1 rounded font-bold">✓ ${tag}</span>`).join('')}</div>
                             </div>` : ''}
                         </div>`;
                     grid.innerHTML += card;
@@ -74,99 +65,73 @@
             });
         }
 
-        // Real-time tekst functie
         function setupLiveText(elementId, docId, db) {
             const el = document.getElementById(elementId);
             const docRef = doc(db, "live_texts", docId);
-            let typingTimer;
-
+            
             onSnapshot(docRef, (docSnap) => {
                 if (docSnap.exists() && document.activeElement !== el) {
-                    el.value = docSnap.data().content;
+                    el.value = docSnap.data().content || "";
+                } else if (!docSnap.exists()) {
+                    el.value = ""; 
                 }
             });
 
-            el.addEventListener('input', () => {
-                clearTimeout(typingTimer);
-                typingTimer = setTimeout(async () => {
-                    await setDoc(docRef, { content: el.value, ts: serverTimestamp() }, { merge: true });
-                }, 500); 
+            el.addEventListener('input', async () => {
+                await setDoc(docRef, { content: el.value, ts: serverTimestamp() }, { merge: true });
             });
         }
 
         async function setupSharedWhiteboard(canvasId, docId, db) {
             const canvas = document.getElementById(canvasId);
             const ctx = canvas.getContext('2d');
-            canvas.width = canvas.offsetWidth;
-            canvas.height = 180;
-            
-            let drawing = false;
-            let currentPath = [];
+            canvas.width = canvas.offsetWidth; canvas.height = 180;
+            let drawing = false; let currentPath = [];
             window[`mode_${canvasId}`] = 'draw'; 
-
             const docRef = doc(db, "whiteboards", docId);
 
             onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    renderBoard(ctx, canvas, data.elements || []);
-                }
+                if (docSnap.exists()) renderBoard(ctx, canvas, docSnap.data().elements || []);
+                else ctx.clearRect(0, 0, canvas.width, canvas.height);
             });
 
             function renderBoard(context, can, elements) {
                 context.clearRect(0, 0, can.width, can.height);
                 elements.forEach(el => {
                     if (el.type === 'path') {
-                        context.beginPath();
-                        context.lineWidth = 3; context.lineCap = 'round'; context.strokeStyle = '#002d5e';
-                        el.points.forEach((p, i) => {
-                            if (i === 0) context.moveTo(p.x, p.y);
-                            else context.lineTo(p.x, p.y);
-                        });
+                        context.beginPath(); context.lineWidth = 3; context.lineCap = 'round'; context.strokeStyle = '#002d5e';
+                        el.points.forEach((p, i) => { i === 0 ? context.moveTo(p.x, p.y) : context.lineTo(p.x, p.y); });
                         context.stroke();
                     } else if (el.type === 'text') {
-                        context.font = "bold 14px Arial";
-                        context.fillStyle = "#002d5e";
-                        context.fillText(el.content, el.x, el.y);
+                        context.font = "bold 14px Arial"; context.fillStyle = "#002d5e"; context.fillText(el.content, el.x, el.y);
                     }
                 });
             }
 
             const getP = (e) => {
                 const r = canvas.getBoundingClientRect();
-                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                return { x: clientX - r.left, y: clientY - r.top };
+                const cX = e.touches ? e.touches[0].clientX : e.clientX;
+                const cY = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: cX - r.left, y: cY - r.top };
             };
 
             canvas.onmousedown = (e) => {
                 const p = getP(e);
                 if (window[`mode_${canvasId}`] === 'text') {
-                    const txt = prompt("Voer tekst in voor op het bord:");
-                    if (txt) {
-                        updateDoc(docRef, { elements: arrayUnion({ type: 'text', content: txt, x: p.x, y: p.y }) })
-                        .catch(() => setDoc(docRef, { elements: [{ type: 'text', content: txt, x: p.x, y: p.y }] }));
-                    }
-                } else {
-                    drawing = true;
-                    ctx.beginPath(); ctx.moveTo(p.x, p.y);
-                    currentPath = [p];
-                }
+                    const txt = prompt("Tekst:");
+                    if (txt) updateDoc(docRef, { elements: arrayUnion({ type: 'text', content: txt, x: p.x, y: p.y }) }).catch(() => setDoc(docRef, { elements: [{ type: 'text', content: txt, x: p.x, y: p.y }] }));
+                } else { drawing = true; ctx.beginPath(); ctx.moveTo(p.x, p.y); currentPath = [p]; }
             };
 
             canvas.onmousemove = (e) => {
                 if (!drawing) return;
-                const p = getP(e);
-                currentPath.push(p);
-                ctx.lineWidth = 3; ctx.strokeStyle = '#002d5e';
-                ctx.lineTo(p.x, p.y); ctx.stroke();
+                const p = getP(e); currentPath.push(p);
+                ctx.lineWidth = 3; ctx.strokeStyle = '#002d5e'; ctx.lineTo(p.x, p.y); ctx.stroke();
             };
 
             const stopDrawing = async () => {
-                if (!drawing) return;
-                drawing = false;
-                await updateDoc(docRef, { elements: arrayUnion({ type: 'path', points: currentPath }) })
-                .catch(() => setDoc(docRef, { elements: [{ type: 'path', points: currentPath }] }));
+                if (!drawing) return; drawing = false;
+                await updateDoc(docRef, { elements: arrayUnion({ type: 'path', points: currentPath }) }).catch(() => setDoc(docRef, { elements: [{ type: 'path', points: currentPath }] }));
             };
 
             window.addEventListener('mouseup', stopDrawing);
@@ -174,16 +139,8 @@
             canvas.addEventListener('touchmove', (e) => { e.preventDefault(); canvas.onmousemove(e); }, {passive:false});
             canvas.addEventListener('touchend', stopDrawing);
 
-            window['clear_' + canvasId] = async () => {
-                if(confirm("Bord leegmaken voor de hele eenheid?")) {
-                    await setDoc(docRef, { elements: [] });
-                }
-            };
-
-            window['setMode_' + canvasId] = (m) => {
-                window[`mode_${canvasId}`] = m;
-                canvas.style.cursor = (m === 'text') ? 'text' : 'crosshair';
-            };
+            window['clear_' + canvasId] = async () => { if(confirm("Bord leegmaken?")) await setDoc(docRef, { elements: [] }); };
+            window['setMode_' + canvasId] = (m) => { window[`mode_${canvasId}`] = m; canvas.style.cursor = (m === 'text') ? 'text' : 'crosshair'; };
         }
 
         window.sendData = async (type, elementId) => {
@@ -192,19 +149,18 @@
             const klas = document.getElementById('uKlas').value;
             if(!txt) return alert("Veld is leeg.");
             const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
-            const feedbackString = gekozen.join(", ");
-            await addDoc(collection(db, "btv_2026"), { 
-                naam, klas, type, txt, ts: serverTimestamp(),
-                feedback: feedbackString
-            });
-            alert(type + " is succesvol verzonden!");
+            await addDoc(collection(db, "btv_2026"), { naam, klas, type, txt, ts: serverTimestamp(), feedback: gekozen.join(", ") });
+            alert("Verzonden naar Live Feed!");
         };
 
-        window.resetAlles = () => {
-            if(confirm("Weet je zeker dat je alle tekstvelden wilt leegmaken?")) {
+        window.resetAlles = async () => {
+            if(confirm("Alles wissen voor deze eenheid?")) {
+                const klas = document.getElementById('uKlas').value;
                 document.querySelectorAll('textarea').forEach(t => t.value = "");
                 document.getElementById('liveScore').innerText = "0";
                 document.querySelectorAll('#feedbackChecklist input').forEach(c => c.checked = false);
+                await deleteDoc(doc(db, "live_texts", LES_ID + '_daa_' + klas));
+                await deleteDoc(doc(db, "live_texts", LES_ID + '_pv_' + klas));
             }
         };
     </script>
@@ -217,31 +173,24 @@
             ["ik noteerde", "rugklachten"], ["ik controleerde", "bewustzijn"], ["ik markeerde", "vloeistoffen"],
             ["ik vroeg", "gegevens", "op"], ["ik maakte", "route", "vrij"], ["ik stelde", "pv", "op"]
         ];
-
         function checkZinnen() {
             const tekst = document.getElementById('zinInput').value.toLowerCase();
             let score = 0;
             criteria.forEach((woorden, index) => {
-                const indicator = document.getElementById(`check-${index + 1}`);
-                const isCorrect = woorden.every(woord => tekst.includes(woord));
-                if(indicator) indicator.className = isCorrect ? "w-3 h-3 rounded-full bg-green-500 shadow-[0_0_8px_green]" : "w-3 h-3 rounded-full bg-slate-300";
-                if (isCorrect) score++;
+                const ind = document.getElementById(`check-${index + 1}`);
+                const ok = woorden.every(w => tekst.includes(w));
+                if(ind) ind.className = ok ? "w-3 h-3 rounded-full bg-green-500 shadow-[0_0_8px_green]" : "w-3 h-3 rounded-full bg-slate-300";
+                if (ok) score++;
             });
             document.getElementById('liveScore').innerText = score;
         }
     </script>
-
-    <style>
-        .bg-police { background-color: #002d5e; }
-        .shadow-police { box-shadow: 0 4px 15px rgba(0, 45, 94, 0.2); }
-    </style>
+    <style> .bg-police { background-color: #002d5e; } .shadow-police { box-shadow: 0 4px 15px rgba(0, 45, 94, 0.2); } </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-900 pb-20 p-4">
-
     <div id="loginOverlay" class="fixed inset-0 bg-police z-50 flex items-center justify-center p-4">
         <div class="bg-white p-8 rounded shadow-2xl w-full max-w-lg border-t-8 border-yellow-500">
             <h1 class="font-black text-2xl mb-4 text-police italic uppercase">Instructie</h1>
-            <p class="text-sm text-slate-600 mb-6">Log in met je <b>voornaam</b> en kies de juiste <b>eenheid</b>.</p>
             <input type="text" id="uNaam" placeholder="Jouw Voornaam" class="w-full border-2 p-4 rounded-lg mb-4 font-bold outline-none focus:border-police text-center">
             <select id="uKlas" class="w-full border-2 p-4 rounded-lg mb-8 font-bold outline-none focus:border-police text-center">
                 <option value="">-- Kies Eenheid --</option>
@@ -252,7 +201,6 @@
     </div>
 
     <div id="mainContent" class="hidden max-w-4xl mx-auto space-y-10">
-        
         <header class="flex justify-between items-center bg-police text-white p-5 rounded-2xl shadow-xl">
             <div class="font-black italic uppercase">Eenheid: <span id="displayKlas" class="text-yellow-400"></span></div>
             <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-[10px] uppercase">Reset Alle Velden</button>
@@ -275,7 +223,7 @@
 
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="font-black uppercase text-sm text-police italic">Deel 2b: ovt let op de ik-vorm</h2>
+                    <h2 class="font-black uppercase text-sm text-police italic">Deel 2b: Situatieschets</h2>
                     <div class="flex gap-1">
                         <button onclick="setMode_c2('draw')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">✏️</button>
                         <button onclick="setMode_c2('text')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">⌨️</button>
@@ -347,7 +295,6 @@
 
         <section class="bg-slate-100 p-6 rounded-2xl border-2 border-slate-300 shadow-inner">
             <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic border-b pb-2 text-center">Deel 8: Feedback Checklist</h2>
-            <p class="text-[10px] text-slate-500 mb-4 uppercase text-center font-bold italic">Vink aan wat je hebt behandeld in je DAA of PV</p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="feedbackChecklist">
                 <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Dienstvoertuig Positie"> Hoe positioneer je je dienstvoertuig?</label>
                 <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Veiligheid Ter Plaatse"> Welke veiligheidsmaatregelen neem je?</label>

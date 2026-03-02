@@ -28,52 +28,91 @@
         window.currentNaam = "";
         window.lastDrawData = { c1: "", c2: "" };
 
-        // REAL-TIME WHITEBOARD
+        // REAL-TIME WHITEBOARD - VERBETERDE VERSIE
         window.setupWhiteboardSync = async function(canvasId, boardKey, klas) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
             const ctx = canvas.getContext('2d');
+            
+            // Zet canvas formaat
             canvas.width = canvas.offsetWidth;
             canvas.height = 180;
-            ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#002d5e';
+            ctx.lineWidth = 3; 
+            ctx.lineCap = 'round'; 
+            ctx.strokeStyle = '#002d5e';
 
             let drawing = false;
+            let lastX = 0, lastY = 0;
+            
             const getP = (e) => { 
                 const r = canvas.getBoundingClientRect(); 
-                return { x: (e.touches?.[0].clientX || e.clientX) - r.left, y: (e.touches?.[0].clientY || e.clientY) - r.top }; 
+                return { 
+                    x: (e.touches?.[0].clientX || e.clientX) - r.left, 
+                    y: (e.touches?.[0].clientY || e.clientY) - r.top 
+                }; 
             };
 
-            canvas.onmousedown = (e) => { drawing = true; ctx.beginPath(); const p = getP(e); ctx.moveTo(p.x, p.y); };
-            canvas.onmousemove = (e) => { if (!drawing) return; const p = getP(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
-            window.addEventListener('mouseup', () => { if (drawing) { drawing = false; scheduleCanvasUpload(canvasId, boardKey, klas); } });
-            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); drawing = true; ctx.beginPath(); const p = getP(e); ctx.moveTo(p.x, p.y); }, { passive: false });
-            canvas.addEventListener('touchmove', (e) => { e.preventDefault(); if (!drawing) return; const p = getP(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, { passive: false });
-            canvas.addEventListener('touchend', (e) => { e.preventDefault(); if (drawing) { drawing = false; scheduleCanvasUpload(canvasId, boardKey, klas); } });
+            // Tekenen
+            const startDrawing = (e) => {
+                e.preventDefault();
+                drawing = true;
+                const p = getP(e);
+                lastX = p.x;
+                lastY = p.y;
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+            };
 
+            const draw = (e) => {
+                e.preventDefault();
+                if (!drawing) return;
+                const p = getP(e);
+                ctx.lineTo(p.x, p.y);
+                ctx.stroke();
+                lastX = p.x;
+                lastY = p.y;
+            };
+
+            const stopDrawing = () => {
+                if (drawing) {
+                    drawing = false;
+                    // Upload naar Firestore
+                    window.uploadCanvasToFirestore(canvasId, boardKey, klas);
+                }
+            };
+
+            // Mouse events
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseleave', stopDrawing);
+
+            // Touch events
+            canvas.addEventListener('touchstart', startDrawing, { passive: false });
+            canvas.addEventListener('touchmove', draw, { passive: false });
+            canvas.addEventListener('touchend', stopDrawing);
+            canvas.addEventListener('touchcancel', stopDrawing);
+
+            // Clear functie
             window['clear_'+canvasId] = () => { 
                 ctx.clearRect(0,0,canvas.width,canvas.height); 
                 ctx.beginPath(); 
-                scheduleCanvasUpload(canvasId, boardKey, klas); 
+                window.uploadCanvasToFirestore(canvasId, boardKey, klas); 
             };
 
-            let uploadTimeout;
-            function scheduleCanvasUpload(canvasId, boardKey, klas) {
-                if (uploadTimeout) clearTimeout(uploadTimeout);
-                uploadTimeout = setTimeout(() => {
-                    window.uploadCanvasToFirestore(canvasId, boardKey, klas);
-                }, 300);
-            }
-            
+            // REAL-TIME LISTENEN naar veranderingen van ANDEREN
             const boardDocRef = doc(db, "whiteboards", `${LES_ID}_${boardKey}_${klas}`);
             
             onSnapshot(boardDocRef, (snap) => {
                 if (snap.exists()) {
                     const data = snap.data();
-                    if (data.imageData && data.imageData !== canvas.toDataURL()) {
-                        if (data.lastUpdatedBy !== window.currentNaam) {
+                    // Alleen laden als het NIET van onszelf komt
+                    if (data.imageData && data.lastUpdatedBy !== window.currentNaam) {
+                        // Vergelijk met huidige canvas om loops te voorkomen
+                        if (data.imageData !== canvas.toDataURL()) {
                             const img = new Image();
                             img.onload = () => {
-                                ctx.clearRect(0,0,canvas.width,canvas.height);
+                                ctx.clearRect(0, 0, canvas.width, canvas.height);
                                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                             };
                             img.src = data.imageData;
@@ -83,10 +122,15 @@
             });
         };
 
+        // Upload canvas naar Firestore
         window.uploadCanvasToFirestore = async function(canvasId, boardKey, klas) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
+            
+            // Alleen uploaden als er echt getekend is
             const imageData = canvas.toDataURL();
+            
+            // Voorkom dubbele uploads
             if (window.lastDrawData[canvasId] === imageData) return;
             window.lastDrawData[canvasId] = imageData;
 
@@ -96,6 +140,8 @@
                 lastUpdatedBy: window.currentNaam,
                 timestamp: serverTimestamp()
             }, { merge: true });
+            
+            console.log(`Canvas ${canvasId} geüpload door ${window.currentNaam}`);
         };
 
         // LOGIN / START
@@ -103,18 +149,25 @@
             const naam = document.getElementById('uNaam').value.trim();
             const klas = document.getElementById('uKlas').value;
             if(!naam || !klas) return alert("Vul voornaam en eenheid in.");
+            
             window.currentKlas = klas;
             window.currentNaam = naam;
+            
+            // Verberg login, toon dashboard
             document.getElementById('loginOverlay').style.display='none';
             document.getElementById('mainContent').classList.remove('hidden');
             document.getElementById('displayKlas').innerText = klas;
             
-            // Init whiteboards
-            window.setupWhiteboardSync('c1', 'bord1', klas);
-            window.setupWhiteboardSync('c2', 'bord2', klas);
+            // Init whiteboards met real-time sync
+            setTimeout(() => {
+                window.setupWhiteboardSync('c1', 'bord1', klas);
+                window.setupWhiteboardSync('c2', 'bord2', klas);
+            }, 100); // Kleine timeout om zeker te zijn dat canvas geladen is
             
             // Start livefeed
             window.initLive(klas);
+            
+            console.log(`Ingelogd: ${naam} (${klas})`);
         };
 
         // LIVE FEED
@@ -183,7 +236,7 @@
                 .replace(/'/g, "&#039;");
         };
 
-        // INLEVEREN (voor alle knoppen)
+        // INLEVEREN
         window.sendData = async function(type, elementId) {
             try {
                 const txt = document.getElementById(elementId).value;
@@ -226,7 +279,6 @@
 
     <!-- AUTOMATISCHE CORRECTIE DEEL 3 -->
     <script>
-        // Deze functie staat los van de module en werkt ALTIJD
         const criteria = [
             ["ik legde", "zijligging"], ["ik zette", "kruising", "af"], ["ik riep", "ambulance"],
             ["ik sprak", "slachtoffer", "aan"], ["ik hield", "verkeer", "afstand"], ["ik plaatste", "motorfiets"],
@@ -249,7 +301,6 @@
             document.getElementById('liveScore').innerText = score;
         }
 
-        // Zorg dat de functie wereldwijd beschikbaar is
         window.checkZinnen = checkZinnen;
     </script>
 
@@ -258,6 +309,7 @@
         .shadow-police { box-shadow: 0 4px 15px rgba(0, 45, 94, 0.2); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         #liveFeed > div > div { animation: fadeIn 0.3s ease-out; }
+        canvas { cursor: crosshair; touch-action: none; }
     </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-900 pb-20 p-4">
@@ -283,7 +335,7 @@
             <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-[10px] uppercase">Reset Alle Velden</button>
         </header>
 
-        <!-- CANVAS SECTIES -->
+        <!-- CANVAS SECTIES - REAL-TIME VOOR ALLE STUDENTEN IN DEZELFDE KLAS -->
         <section class="space-y-6">
             <!-- DEEL 2a -->
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
@@ -332,8 +384,7 @@
                     </script>
                 </div>
                 <div>
-                    <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 p-4 rounded-xl text-sm h-[350px] outline-none focus:border-police" placeholder="Schrijf hier de actieve ik-zinnen (bv. 'Ik legde het slachtoffer in stabiele zijligging.')..."></textarea>
-                    <!-- GEEN VERZENDKNOP - alleen automatische correctie -->
+                    <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 p-4 rounded-xl text-sm h-[350px] outline-none focus:border-police" placeholder="Schrijf hier de actieve ik-zinnen..."></textarea>
                 </div>
             </div>
         </section>
@@ -368,7 +419,7 @@
             </div>
         </section>
 
-        <!-- DEEL 7: PV MET VERSTUURKNOP (deze werkt NU!) -->
+        <!-- DEEL 7: PV MET VERSTUURKNOP -->
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
             <h2 class="font-black uppercase text-sm mb-4 text-police italic underline">Deel 7: PV Bevindingen</h2>
             <textarea id="pvInput" class="w-full border-2 p-5 rounded-xl text-sm h-60" placeholder="Stel hier je PV van bevindingen op..."></textarea>

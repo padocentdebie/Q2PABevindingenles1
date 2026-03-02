@@ -21,7 +21,7 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const LES_ID = "btv_zaandam_2026";
+        const LES_ID = "btv_2026_zaandam";
 
         window.startLes = () => {
             const naam = document.getElementById('uNaam').value.trim();
@@ -36,30 +36,29 @@
         async function initLive(klas, naam) {
             setupSharedWhiteboard('c1', LES_ID + '_bord1_' + klas, db);
             setupSharedWhiteboard('c2', LES_ID + '_bord2_' + klas, db);
-            
-            // LIVE SYNC VOOR DE TEKSTVELDEN
             setupLiveText('daaInput', LES_ID + '_daa_' + klas, db);
             setupLiveText('pvInput', LES_ID + '_pv_' + klas, db);
             
-            // LIVE FEED ONDERAAN (De verzonden kaarten)
+            // LIVE FEED ONDERAAN
             const q = query(collection(db, "btv_submissions"), where("klas", "==", klas), orderBy("ts", "desc"));
             onSnapshot(q, (sn) => {
                 const feed = document.getElementById('liveFeed');
                 feed.innerHTML = "";
                 const grid = document.createElement('div');
-                grid.className = "grid grid-cols-1 md:grid-cols-2 gap-4";
+                grid.className = "grid grid-cols-1 md:grid-cols-2 gap-4 w-full";
+                
                 sn.forEach(d => {
                     const data = d.data();
-                    const feedbackTags = data.feedback ? data.feedback.split(', ') : [];
+                    const tags = data.feedback ? data.feedback.split(', ') : [];
                     const card = `
                         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                             <div class="bg-slate-100 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
                                 <span class="font-black text-blue-900 text-[11px] uppercase tracking-tighter">${data.naam}</span>
                                 <span class="bg-blue-900 text-white text-[9px] px-2 py-0.5 rounded-full font-bold uppercase">${data.type}</span>
                             </div>
-                            <div class="p-4 flex-grow"><p class="text-slate-700 text-sm leading-relaxed italic">"${data.txt}"</p></div>
-                            ${data.feedback ? `<div class="p-4 bg-blue-50/50 border-t border-blue-100">
-                                <div class="flex flex-wrap gap-1">${feedbackTags.map(tag => `<span class="bg-white border border-blue-200 text-blue-700 text-[9px] px-2 py-1 rounded font-bold">✓ ${tag}</span>`).join('')}</div>
+                            <div class="p-4 flex-grow"><p class="text-slate-700 text-sm italic">"${data.txt}"</p></div>
+                            ${data.feedback ? `<div class="p-3 bg-blue-50/50 border-t border-blue-100 flex flex-wrap gap-1">
+                                ${tags.map(t => `<span class="bg-white border border-blue-200 text-blue-700 text-[9px] px-2 py-1 rounded font-bold">✓ ${t}</span>`).join('')}
                             </div>` : ''}
                         </div>`;
                     grid.innerHTML += card;
@@ -71,18 +70,16 @@
         function setupLiveText(elementId, docId, db) {
             const el = document.getElementById(elementId);
             const docRef = doc(db, "live_texts", docId);
-            let isTyping = false;
+            let ignoreUpdate = false;
 
             onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists() && !isTyping && document.activeElement !== el) {
+                if (docSnap.exists() && document.activeElement !== el) {
                     el.value = docSnap.data().content || "";
                 }
             });
 
-            el.addEventListener('input', () => {
-                isTyping = true;
-                setDoc(docRef, { content: el.value, ts: serverTimestamp() }, { merge: true })
-                    .then(() => { isTyping = false; });
+            el.addEventListener('input', async () => {
+                await setDoc(docRef, { content: el.value, ts: serverTimestamp() }, { merge: true });
             });
         }
 
@@ -95,22 +92,19 @@
             const docRef = doc(db, "whiteboards", docId);
 
             onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists()) renderBoard(ctx, canvas, docSnap.data().elements || []);
-                else ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (docSnap.exists()) {
+                    (docSnap.data().elements || []).forEach(el => {
+                        if (el.type === 'path') {
+                            ctx.beginPath(); ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#002d5e';
+                            el.points.forEach((p, i) => { i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); });
+                            ctx.stroke();
+                        } else if (el.type === 'text') {
+                            ctx.font = "bold 14px Arial"; ctx.fillStyle = "#002d5e"; ctx.fillText(el.content, el.x, el.y);
+                        }
+                    });
+                }
             });
-
-            function renderBoard(context, can, elements) {
-                context.clearRect(0, 0, can.width, can.height);
-                elements.forEach(el => {
-                    if (el.type === 'path') {
-                        context.beginPath(); context.lineWidth = 3; context.lineCap = 'round'; context.strokeStyle = '#002d5e';
-                        el.points.forEach((p, i) => { i === 0 ? context.moveTo(p.x, p.y) : context.lineTo(p.x, p.y); });
-                        context.stroke();
-                    } else if (el.type === 'text') {
-                        context.font = "bold 14px Arial"; context.fillStyle = "#002d5e"; context.fillText(el.content, el.x, el.y);
-                    }
-                });
-            }
 
             const getP = (e) => {
                 const r = canvas.getBoundingClientRect();
@@ -153,8 +147,13 @@
             const klas = document.getElementById('uKlas').value;
             if(!txt) return alert("Veld is leeg.");
             const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
-            await addDoc(collection(db, "btv_submissions"), { naam, klas, type, txt, ts: serverTimestamp(), feedback: gekozen.join(", ") });
-            alert("Verzonden naar Live Feed!");
+            
+            try {
+                await addDoc(collection(db, "btv_submissions"), { 
+                    naam, klas, type, txt, ts: serverTimestamp(), feedback: gekozen.join(", ") 
+                });
+                alert("Succesvol verzonden naar de Live Feed!");
+            } catch (e) { alert("Fout bij verzenden: " + e.message); }
         };
 
         window.resetAlles = async () => {
@@ -163,7 +162,6 @@
                 document.querySelectorAll('textarea').forEach(t => t.value = "");
                 document.getElementById('liveScore').innerText = "0";
                 document.querySelectorAll('#feedbackChecklist input').forEach(c => c.checked = false);
-                // WIS OOK DATABASE RECORDS VOOR DEZE EENHEID
                 await deleteDoc(doc(db, "live_texts", LES_ID + '_daa_' + klas));
                 await deleteDoc(doc(db, "live_texts", LES_ID + '_pv_' + klas));
             }
@@ -195,9 +193,9 @@
 <body class="bg-slate-50 font-sans text-slate-900 pb-20 p-4">
     <div id="loginOverlay" class="fixed inset-0 bg-police z-50 flex items-center justify-center p-4">
         <div class="bg-white p-8 rounded shadow-2xl w-full max-w-lg border-t-8 border-yellow-500">
-            <h1 class="font-black text-2xl mb-4 text-police italic uppercase">Instructie</h1>
-            <input type="text" id="uNaam" placeholder="Jouw Voornaam" class="w-full border-2 p-4 rounded-lg mb-4 font-bold outline-none focus:border-police text-center">
-            <select id="uKlas" class="w-full border-2 p-4 rounded-lg mb-8 font-bold outline-none focus:border-police text-center">
+            <h1 class="font-black text-2xl mb-4 text-police italic uppercase">Inloggen</h1>
+            <input type="text" id="uNaam" placeholder="Jouw Voornaam" class="w-full border-2 p-4 rounded-lg mb-4 font-bold outline-none focus:border-police text-center text-lg">
+            <select id="uKlas" class="w-full border-2 p-4 rounded-lg mb-8 font-bold outline-none focus:border-police text-center text-lg">
                 <option value="">-- Kies Eenheid --</option>
                 <option>Delta</option><option>Echo</option><option>Foxtrot</option><option>Kilo</option><option>Lima</option><option>Mike</option>
             </select>
@@ -211,33 +209,32 @@
             <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-[10px] uppercase">Reset Alle Velden</button>
         </header>
 
-        <section class="space-y-6">
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="font-black uppercase text-sm text-police italic">Deel 2a: Redenen van Wetenschap</h2>
+                    <h2 class="font-black uppercase text-xs text-police italic">2a: Redenen van Wetenschap</h2>
                     <div class="flex gap-1">
-                        <button onclick="setMode_c1('draw')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">✏️</button>
-                        <button onclick="setMode_c1('text')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">⌨️</button>
-                        <button onclick="clear_c1()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
+                        <button onclick="setMode_c1('draw')" class="bg-slate-100 p-1 rounded border text-[10px]">✏️</button>
+                        <button onclick="setMode_c1('text')" class="bg-slate-100 p-1 rounded border text-[10px]">⌨️</button>
+                        <button onclick="clear_c1()" class="text-[10px] text-red-600 border px-2 py-1 rounded">Gum</button>
                     </div>
                 </div>
                 <canvas id="c1" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none"></canvas>
-                <textarea id="t1" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij redenen van wetenschap..."></textarea>
-                <button onclick="sendData('Redenen Wetenschap', 't1')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">Inleveren</button>
+                <textarea id="t1" class="w-full border-2 p-3 rounded-xl text-sm h-16" placeholder="Toelichting..."></textarea>
+                <button onclick="sendData('Redenen Wetenschap', 't1')" class="w-full bg-police text-white py-2 mt-2 rounded-xl font-black uppercase text-[10px]">Verstuur</button>
             </div>
-
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="font-black uppercase text-sm text-police italic">Deel 2b: Situatieschets</h2>
+                    <h2 class="font-black uppercase text-xs text-police italic">2b: Situatieschets</h2>
                     <div class="flex gap-1">
-                        <button onclick="setMode_c2('draw')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">✏️</button>
-                        <button onclick="setMode_c2('text')" class="bg-slate-100 p-1 rounded border text-[10px] font-bold">⌨️</button>
-                        <button onclick="clear_c2()" class="text-[10px] font-bold text-red-600 uppercase border border-red-200 px-2 py-1 rounded">Gum Bord</button>
+                        <button onclick="setMode_c2('draw')" class="bg-slate-100 p-1 rounded border text-[10px]">✏️</button>
+                        <button onclick="setMode_c2('text')" class="bg-slate-100 p-1 rounded border text-[10px]">⌨️</button>
+                        <button onclick="clear_c2()" class="text-[10px] text-red-600 border px-2 py-1 rounded">Gum</button>
                     </div>
                 </div>
                 <canvas id="c2" class="w-full bg-slate-50 border-2 rounded-xl mb-4 touch-none"></canvas>
-                <textarea id="t2" class="w-full border-2 p-4 rounded-xl text-sm h-20" placeholder="Toelichting bij schets..."></textarea>
-                <button onclick="sendData('Situatieschets', 't2')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-xs">Inleveren</button>
+                <textarea id="t2" class="w-full border-2 p-3 rounded-xl text-sm h-16" placeholder="Toelichting..."></textarea>
+                <button onclick="sendData('Situatieschets', 't2')" class="w-full bg-police text-white py-2 mt-2 rounded-xl font-black uppercase text-[10px]">Verstuur</button>
             </div>
         </section>
 
@@ -247,7 +244,7 @@
                 <div class="bg-green-600 text-white px-4 py-1 rounded-full font-black text-xs">Score: <span id="liveScore">0</span>/15</div>
             </div>
             <div class="grid md:grid-cols-2 gap-6">
-                <div class="space-y-2 text-[10px] font-bold bg-slate-50 p-4 rounded-xl h-[350px] overflow-y-auto">
+                <div class="space-y-2 text-[10px] font-bold bg-slate-50 p-4 rounded-xl h-60 overflow-y-auto">
                     <script>
                         const zinnen = [
                             "De motorrijder is door mij in stabiele zijligging gelegd.", "De kruising is door mij direct afgezet.", "De ambulance is door mij via het OC opgeroepen.",
@@ -258,65 +255,46 @@
                         ];
                         zinnen.forEach((z, i) => document.write(`
                             <div class="flex items-center gap-3 bg-white p-2 rounded border border-slate-200">
-                                <span id="check-${i+1}" class="w-3 h-3 rounded-full bg-slate-300 shrink-0"></span>
+                                <span id="check-${i+1}" class="w-2 h-2 rounded-full bg-slate-300 shrink-0"></span>
                                 <span>${i+1}. ${z}</span>
                             </div>`));
                     </script>
                 </div>
-                <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 p-4 rounded-xl text-sm h-[350px] outline-none focus:border-police" placeholder="Schrijf hier de actieve ik-zinnen..."></textarea>
+                <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 p-4 rounded-xl text-sm h-60 outline-none focus:border-police" placeholder="Schrijf hier de actieve ik-zinnen..."></textarea>
             </div>
-        </section>
-
-        <section class="bg-red-700 text-white p-6 rounded-2xl shadow-xl border-l-8 border-yellow-500">
-            <h2 class="font-black uppercase text-xs mb-3 text-yellow-400 underline">Deel 4: Melding OC</h2>
-            <p class="font-mono text-sm italic leading-relaxed text-white">
-                “Wilt u gaan naar kruising Vincent van Goghweg met de Westzijde in Zaandam. Hier is een motorrijder gevallen. Het slachtoffer is aanspreekbaar en heeft mogelijk letsel. De ambulance is onderweg en u heeft toestemming.”
-            </p>
         </section>
 
         <section class="bg-yellow-50 border-4 border-yellow-400 p-6 rounded-2xl shadow-lg">
-            <h2 class="font-black uppercase text-sm mb-4 text-yellow-900 italic text-center underline">Deel 5: Stel uw DAA op</h2>
+            <h2 class="font-black uppercase text-sm mb-4 text-yellow-900 italic text-center underline">Deel 5: Stel uw DAA op (Live Sync)</h2>
             <textarea id="daaInput" class="w-full border-2 border-yellow-200 p-5 rounded-xl text-sm h-40 shadow-inner" placeholder="Doel - Aanpak - Analyse..."></textarea>
-            <button onclick="sendData('DAA', 'daaInput')" class="w-full bg-yellow-600 text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md">Verstuur DAA naar Livefeed</button>
+            <button onclick="sendData('DAA', 'daaInput')" class="w-full bg-yellow-600 text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md">Verstuur DAA naar Live Feed</button>
         </section>
 
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
-            <h2 class="font-black uppercase text-xs mb-4 text-police underline">Deel 6: Ter Plaatse</h2>
-            <p class="text-sm italic leading-relaxed mb-6 text-slate-700">
-                Op de kruising zie je een motorfiets liggen en een stukje verderop een persoon in een motorpak en een helm op. Het slachtoffer geeft aan dat hij onderuit is gegleden in de bocht terwijl hij ongeveer 50 km/u reed.
-            </p>
-            <div class="grid grid-cols-3 gap-4">
-                <div class="text-center"><img src="bord50.png" alt="Bord 50" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">bord50.png</span></div>
-                <div class="text-center"><img src="kruispuntgooglemaps.png" alt="Maps" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">maps.png</span></div>
-                <div class="text-center"><img src="overzichtkruispunt.png" alt="Overzicht" class="rounded border shadow-sm mx-auto mb-1"><span class="text-[8px] font-bold uppercase">kruispunt.png</span></div>
-            </div>
+            <h2 class="font-black uppercase text-sm mb-4 text-police italic underline">Deel 7: PV Bevindingen (Live Sync)</h2>
+            <textarea id="pvInput" class="w-full border-2 p-5 rounded-xl text-sm h-60" placeholder="Stel hier je PV op..."></textarea>
+            <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-police text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md italic">Verstuur PV naar Live Feed</button>
         </section>
 
-        <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
-            <h2 class="font-black uppercase text-sm mb-4 text-police italic underline">Deel 7: PV Bevindingen</h2>
-            <textarea id="pvInput" class="w-full border-2 p-5 rounded-xl text-sm h-60" placeholder="Stel hier je PV van bevindingen op..."></textarea>
-            <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-police text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md italic">Verstuur PV naar Livefeed</button>
-        </section>
-
-        <section class="bg-slate-100 p-6 rounded-2xl border-2 border-slate-300 shadow-inner">
-            <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic border-b pb-2 text-center">Deel 8: Feedback Checklist</h2>
+        <section class="bg-slate-100 p-6 rounded-2xl border-2 border-slate-300">
+            <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic text-center">Deel 8: Feedback Checklist</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="feedbackChecklist">
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Dienstvoertuig Positie"> Hoe positioneer je je dienstvoertuig?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Veiligheid Ter Plaatse"> Welke veiligheidsmaatregelen neem je?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="METHANE"> METHANE-methode terugmelding?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Strafbaar Feit"> Welk strafbaar feit is hier sprake?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Partners"> Welke partners inschakelen?</label>
-                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50 transition-colors"><input type="checkbox" value="Opsporing"> Welke opsporingsactiviteiten?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Dienstvoertuig Positie"> Hoe positioneer je je dienstvoertuig?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Veiligheid Ter Plaatse"> Welke veiligheidsmaatregelen neem je?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="METHANE"> METHANE-methode terugmelding?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Strafbaar Feit"> Welk strafbaar feit is hier sprake?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Partners"> Welke partners inschakelen?</label>
+                <label class="flex items-center gap-3 bg-white p-3 rounded-lg text-[11px] font-bold border cursor-pointer hover:bg-blue-50"><input type="checkbox" value="Opsporing"> Welke opsporingsactiviteiten?</label>
             </div>
         </section>
 
         <section class="mt-10">
             <div class="flex items-center gap-4 mb-6">
                 <div class="h-px bg-slate-300 flex-1"></div>
-                <h2 class="font-black uppercase text-[12px] text-blue-900 tracking-widest italic">Live Feed Eenheidspagina</h2>
+                <h2 class="font-black uppercase text-[12px] text-blue-900 tracking-widest italic text-center">Live Feed van Verzonden Resultaten</h2>
                 <div class="h-px bg-slate-300 flex-1"></div>
             </div>
-            <div id="liveFeed"></div>
+            <div id="liveFeed" class="w-full"></div>
         </section>
 
     </div>

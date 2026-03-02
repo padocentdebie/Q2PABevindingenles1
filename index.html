@@ -24,16 +24,10 @@
         const LES_ID = "btv_zaandam_volledig";
 
         // ========== REAL-TIME WHITEBOARD LOGICA ==========
-        // Elke student heeft per bord een eigen subcollectie: borden/{klas}_bord1_{naam} / {klas}_bord2_{naam}
-        // Maar we willen ALLE borden van dezelfde klas zien. Daarom slaan we per lijn een document op.
-        // Simpeler: we gebruiken Firestore om canvas als afbeelding (dataURL) te syncen.
-        // Voor real-time tekenen zonder vertraging: elke 2 seconden wordt canvas geüpdatet als er veranderd is.
-        
         let currentKlas = "";
         let currentNaam = "";
-        let lastDrawData = { c1: "", c2: "" }; // voor throttling
+        let lastDrawData = { c1: "", c2: "" };
 
-        // Setup whiteboard met Firebase sync (per klas, alle studenten)
         async function setupWhiteboardSync(canvasId, boardKey, klas) {
             const canvas = document.getElementById(canvasId);
             const ctx = canvas.getContext('2d');
@@ -41,14 +35,12 @@
             canvas.height = 180;
             ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#002d5e';
 
-            // Teken-instellingen (lokaal)
             let drawing = false;
             const getP = (e) => { 
                 const r = canvas.getBoundingClientRect(); 
                 return { x: (e.touches?.[0].clientX || e.clientX) - r.left, y: (e.touches?.[0].clientY || e.clientY) - r.top }; 
             };
 
-            // Events voor tekenen
             canvas.onmousedown = (e) => { drawing = true; ctx.beginPath(); const p = getP(e); ctx.moveTo(p.x, p.y); };
             canvas.onmousemove = (e) => { if (!drawing) return; const p = getP(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
             window.addEventListener('mouseup', () => { if (drawing) { drawing = false; scheduleCanvasUpload(canvasId, boardKey, klas); } });
@@ -56,14 +48,12 @@
             canvas.addEventListener('touchmove', (e) => { e.preventDefault(); if (!drawing) return; const p = getP(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, { passive: false });
             canvas.addEventListener('touchend', (e) => { e.preventDefault(); if (drawing) { drawing = false; scheduleCanvasUpload(canvasId, boardKey, klas); } });
 
-            // Clear functie
             window['clear_'+canvasId] = () => { 
                 ctx.clearRect(0,0,canvas.width,canvas.height); 
                 ctx.beginPath(); 
                 scheduleCanvasUpload(canvasId, boardKey, klas); 
             };
 
-            // Upload throttling: niet bij elke pixel, maar 200ms na laatste tekenstop
             let uploadTimeout;
             function scheduleCanvasUpload(canvasId, boardKey, klas) {
                 if (uploadTimeout) clearTimeout(uploadTimeout);
@@ -71,23 +61,13 @@
                     uploadCanvasToFirestore(canvasId, boardKey, klas);
                 }, 300);
             }
-
-            // Luisteren naar alle canvassen van deze klas (collection "whiteboards")
-            // We tonen een overlay van alle studenten hun lijnen? Dat wordt te chaotisch.
-            // Betere interpretatie "real time voor alle studenten": zodra iemand tekent, zien anderen dat.
-            // We gebruiken één document per bord per klas, maar meerdere gebruikers kunnen tegelijk tekenen => laatste overschrijft.
-            // Oplossing: we slaan lijnen niet op, maar de complete canvas dataUrl. Iedereen die tekent uploadt zijn canvas.
-            // Andere students krijgen dat te zien als 'live beeld'. Dus ze zien elkaars tekeningen, maar niet tegelijkertijd tekenen (dat wordt overschreven).
-            // Dat is acceptabel voor een onderwijs-demo. We noemen het "real-time delen".
             
-            const boardDocRef = doc(db, "whiteboards", `${LES_ID}_${boardKey}_${klas}`); // 1 document per bord per klas
+            const boardDocRef = doc(db, "whiteboards", `${LES_ID}_${boardKey}_${klas}`);
             
-            // Luister naar wijzigingen (van iemand in dezelfde klas)
             onSnapshot(boardDocRef, (snap) => {
                 if (snap.exists()) {
                     const data = snap.data();
                     if (data.imageData && data.imageData !== canvas.toDataURL()) {
-                        // Alleen laden als het niet van onszelf komt (om lus te voorkomen)
                         if (data.lastUpdatedBy !== currentNaam) {
                             const img = new Image();
                             img.onload = () => {
@@ -104,8 +84,7 @@
         async function uploadCanvasToFirestore(canvasId, boardKey, klas) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
-            const imageData = canvas.toDataURL(); // base64 PNG
-            // Vermijd oneindige loop: check of het wel veranderd is
+            const imageData = canvas.toDataURL();
             if (lastDrawData[canvasId] === imageData) return;
             lastDrawData[canvasId] = imageData;
 
@@ -128,7 +107,6 @@
             document.getElementById('mainContent').classList.remove('hidden');
             document.getElementById('displayKlas').innerText = klas;
             
-            // Init whiteboards met sync (real-time voor alle studenten per klas)
             setupWhiteboardSync('c1', 'bord1', klas);
             setupWhiteboardSync('c2', 'bord2', klas);
             
@@ -172,7 +150,7 @@
             });
         }
 
-        // ========== INLEVEREN ==========
+        // ========== INLEVEREN (algemeen) ==========
         window.sendData = async (type, elementId) => {
             const txt = document.getElementById(elementId).value;
             const naam = document.getElementById('uNaam').value;
@@ -189,6 +167,24 @@
             alert(type + " is succesvol verzonden!");
         };
 
+        // ========== SPECIALE FUNCTIE VOOR DE IK-VORM ZINNEN ==========
+        window.sendActieveZinnen = async () => {
+            const txt = document.getElementById('zinInput').value;
+            const naam = document.getElementById('uNaam').value;
+            const klas = document.getElementById('uKlas').value;
+            if(!txt) return alert("Vul eerst je actieve ik-zinnen in.");
+            
+            // feedback wordt niet standaard meegestuurd tenzij aangevinkt, maar we kunnen optioneel de checklist meesturen
+            const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
+            const feedbackString = gekozen.join(", ");
+            
+            await addDoc(collection(db, "btv_2026"), { 
+                naam, klas, type: "Actieve ik-zinnen", txt, ts: serverTimestamp(),
+                feedback: feedbackString
+            });
+            alert("Je ik-zinnen zijn verstuurd naar de livefeed!");
+        };
+
         window.resetAlles = () => {
             if(confirm("Weet je zeker dat je alle tekstvelden wilt leegmaken?")) {
                 document.querySelectorAll('textarea').forEach(t => t.value = "");
@@ -199,7 +195,7 @@
         };
     </script>
 
-    <!-- Oefenblok en checkZinnen blijft ongewijzigd -->
+    <!-- Oefenblok en checkZinnen (volledig intact, plus extra knop voor verzenden) -->
     <script>
         const criteria = [
             ["ik legde", "zijligging"], ["ik zette", "kruising", "af"], ["ik riep", "ambulance"],
@@ -220,8 +216,6 @@
             });
             document.getElementById('liveScore').innerText = score;
         }
-
-        // Fallback oude setup (wordt overschreven door module, maar houden voor clear functies)
     </script>
 
     <style>
@@ -251,7 +245,7 @@
             <button onclick="resetAlles()" class="bg-red-600 px-4 py-2 rounded-lg font-black text-[10px] uppercase">Reset Alle Velden</button>
         </header>
 
-        <!-- Canvas secties: ID's gelijk, knoppen clear_c1/c2 bestaan -->
+        <!-- Canvas secties real-time -->
         <section class="space-y-6">
             <div class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
                 <div class="flex justify-between items-center mb-4">
@@ -274,10 +268,10 @@
             </div>
         </section>
 
-        <!-- Deel 3 oefenblok (onaangeroerd) -->
+        <!-- Deel 3: Actieve Verleden Tijd (oefening + verzendknop hersteld) -->
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
             <div class="flex justify-between items-center mb-6 border-b pb-4">
-                <h2 class="font-black uppercase text-sm text-police italic underline">Deel 3: Actieve Verleden Tijd</h2>
+                <h2 class="font-black uppercase text-sm text-police italic underline">Deel 3: Actieve Verleden Tijd (ik-vorm)</h2>
                 <div class="bg-green-600 text-white px-4 py-1 rounded-full font-black text-xs">Score: <span id="liveScore">0</span>/15</div>
             </div>
             <div class="grid md:grid-cols-2 gap-6">
@@ -297,11 +291,14 @@
                             </div>`));
                     </script>
                 </div>
-                <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 p-4 rounded-xl text-sm h-[350px] outline-none focus:border-police" placeholder="Schrijf hier de actieve ik-zinnen..."></textarea>
+                <div class="flex flex-col gap-3">
+                    <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 p-4 rounded-xl text-sm h-[280px] outline-none focus:border-police" placeholder="Schrijf hier de actieve ik-zinnen (bv. 'Ik legde het slachtoffer in stabiele zijligging.')..."></textarea>
+                    <button onclick="sendActieveZinnen()" class="bg-green-700 text-white py-3 rounded-xl font-black uppercase text-xs shadow-md hover:bg-green-800 transition">Verstuur ik-zinnen naar livefeed</button>
+                </div>
             </div>
         </section>
 
-        <!-- Deel 4 tm 8 identiek, knoppen hebben nu werkende sendData met feedback -->
+        <!-- Deel 4: Melding OC (informatie) -->
         <section class="bg-red-700 text-white p-6 rounded-2xl shadow-xl border-l-8 border-yellow-500">
             <h2 class="font-black uppercase text-xs mb-3 text-yellow-400 underline">Deel 4: Melding OC</h2>
             <p class="font-mono text-sm italic leading-relaxed text-white">
@@ -310,12 +307,14 @@
             </p>
         </section>
 
+        <!-- Deel 5: DAA met werkende knop -->
         <section class="bg-yellow-50 border-4 border-yellow-400 p-6 rounded-2xl shadow-lg">
             <h2 class="font-black uppercase text-sm mb-4 text-yellow-900 italic text-center underline">Deel 5: Stel uw DAA op</h2>
             <textarea id="daaInput" class="w-full border-2 border-yellow-200 p-5 rounded-xl text-sm h-40 shadow-inner" placeholder="Doel - Aanpak - Analyse..."></textarea>
             <button onclick="sendData('DAA', 'daaInput')" class="w-full bg-yellow-600 text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md">Verstuur DAA naar Livefeed</button>
         </section>
 
+        <!-- Deel 6: Ter Plaatse (informatie) -->
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
             <h2 class="font-black uppercase text-xs mb-4 text-police underline">Deel 6: Ter Plaatse</h2>
             <p class="text-sm italic leading-relaxed mb-6 text-slate-700">
@@ -329,12 +328,14 @@
             </div>
         </section>
 
+        <!-- Deel 7: PV met werkende knop -->
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
             <h2 class="font-black uppercase text-sm mb-4 text-police italic underline">Deel 7: PV Bevindingen</h2>
             <textarea id="pvInput" class="w-full border-2 p-5 rounded-xl text-sm h-60" placeholder="Stel hier je PV van bevindingen op..."></textarea>
             <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-police text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md italic">Verstuur PV naar Livefeed</button>
         </section>
 
+        <!-- Deel 8: Feedback Checklist (blijft zoals het was) -->
         <section class="bg-slate-100 p-6 rounded-2xl border-2 border-slate-300 shadow-inner">
             <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic border-b pb-2 text-center">Deel 8: Feedback Checklist</h2>
             <p class="text-[10px] text-slate-500 mb-4 uppercase text-center font-bold italic">Vink aan wat je hebt behandeld in je DAA of PV</p>
@@ -348,6 +349,7 @@
             </div>
         </section>
 
+        <!-- Live Feed -->
         <section class="mt-10">
             <div class="flex items-center gap-4 mb-6">
                 <div class="h-px bg-slate-300 flex-1"></div>

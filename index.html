@@ -8,44 +8,38 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, onSnapshot, setDoc, arrayUnion, collection, addDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getDatabase, ref, onValue, set, push } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBRq1HFmhrpW_EMMZwpURrbTArz-L5iWT4",
-            authDomain: "pvaangifteinleveren-77dbe.firebaseapp.com",
-            projectId: "pvaangifteinleveren-77dbe",
-            storageBucket: "pvaangifteinleveren-77dbe.firebasestorage.app",
-            messagingSenderId: "20239054410",
-            appId: "1:20239054410:web:264b3c759312248d9f18b3"
+            databaseURL: "https://pvaangifteinleveren-77dbe-default-rtdb.europe-west1.firebasedatabase.app/",
+            projectId: "pvaangifteinleveren-77dbe"
         };
 
         const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+        const db = getDatabase(app);
 
-        // --- REALTIME WHITEBOARD ---
-        async function setupWhiteboard(canvasId, docId) {
+        // --- WHITEBOARD LOGICA ---
+        function setupWhiteboard(canvasId, docId) {
             const canvas = document.getElementById(canvasId);
             const ctx = canvas.getContext('2d');
             canvas.width = canvas.offsetWidth;
             canvas.height = 200;
-
             let drawing = false;
             let currentPath = [];
 
-            onSnapshot(doc(db, "whiteboards", docId), (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    if (data.lines) {
-                        data.lines.forEach(line => {
-                            ctx.beginPath();
-                            ctx.strokeStyle = '#002d5e';
-                            ctx.lineWidth = 3;
-                            ctx.lineCap = 'round';
-                            line.forEach((p, i) => { i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); });
-                            ctx.stroke();
-                        });
-                    }
+            onValue(ref(db, 'whiteboards/' + docId), (snap) => {
+                const data = snap.val();
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (data && data.lines) {
+                    Object.values(data.lines).forEach(line => {
+                        ctx.beginPath();
+                        ctx.strokeStyle = '#002d5e';
+                        ctx.lineWidth = 3;
+                        ctx.lineCap = 'round';
+                        line.forEach((p, i) => { i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); });
+                        ctx.stroke();
+                    });
                 }
             });
 
@@ -56,72 +50,54 @@
                 return { x: cx, y: cy };
             };
 
-            const start = (e) => { drawing = true; currentPath = [getPos(e)]; e.preventDefault(); };
-            const move = (e) => {
-                if (!drawing) return;
-                const pos = getPos(e);
-                ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#002d5e';
-                ctx.lineTo(pos.x, pos.y); ctx.stroke();
-                currentPath.push(pos);
-                e.preventDefault();
-            };
-            const stop = async () => {
-                if (!drawing) return; drawing = false;
-                await setDoc(doc(db, "whiteboards", docId), { lines: arrayUnion(currentPath) }, { merge: true });
-            };
-
-            canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); window.addEventListener('mouseup', stop);
-            canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', move); canvas.addEventListener('touchend', stop);
-
-            window['clear_' + canvasId] = async () => { await setDoc(doc(db, "whiteboards", docId), { lines: [] }); };
+            canvas.onmousedown = (e) => { drawing = true; currentPath = [getPos(e)]; };
+            canvas.onmousemove = (e) => { if (!drawing) return; const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); currentPath.push(pos); };
+            window.onmouseup = () => { if (!drawing) return; drawing = false; push(ref(db, 'whiteboards/' + docId + '/lines'), currentPath); };
+            window['clear_' + canvasId] = () => { set(ref(db, 'whiteboards/' + docId), { lines: [] }); };
         }
 
-        // --- DASHBOARD START ---
+        // --- FEED & VERZENDEN ---
         window.startLes = () => {
             const naam = document.getElementById('uNaam').value.trim();
             const klas = document.getElementById('uKlas').value;
-            if(!naam || !klas) return alert("Vul voornaam en eenheid in.");
+            if(!naam || !klas) return alert("Vul gegevens in.");
             document.getElementById('loginOverlay').style.display='none';
             document.getElementById('mainContent').classList.remove('hidden');
             document.getElementById('displayKlas').innerText = klas;
             setupWhiteboard('c1', 'bord1_' + klas);
             setupWhiteboard('c2', 'bord2_' + klas);
-            initFeed(klas);
+            
+            onValue(ref(db, 'btv_2026/' + klas), (snap) => {
+                const feed = document.getElementById('liveFeed');
+                feed.innerHTML = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="fGrid"></div>';
+                if(snap.val()){
+                    Object.values(snap.val()).reverse().forEach(item => {
+                        document.getElementById('fGrid').innerHTML += `
+                            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                <div class="flex justify-between mb-2">
+                                    <span class="font-black text-blue-900 text-[10px] uppercase">${item.naam}</span>
+                                    <span class="bg-blue-600 text-white text-[8px] px-2 py-0.5 rounded font-bold uppercase italic">${item.type}</span>
+                                </div>
+                                <p class="text-sm italic text-slate-700">"${item.txt}"</p>
+                                <div class="mt-2 text-[8px] font-bold text-blue-800 italic uppercase">${item.feedback || ''}</div>
+                            </div>`;
+                    });
+                }
+            });
         };
 
-        function initFeed(klas) {
-            const q = query(collection(db, "btv_2026"), where("klas", "==", klas), orderBy("ts", "desc"));
-            onSnapshot(q, (sn) => {
-                const feed = document.getElementById('liveFeed');
-                feed.innerHTML = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="feedGrid"></div>';
-                sn.forEach(d => {
-                    const data = d.data();
-                    document.getElementById('feedGrid').innerHTML += `
-                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                            <div class="flex justify-between mb-2">
-                                <span class="font-black text-blue-900 text-[10px] uppercase">${data.naam}</span>
-                                <span class="bg-blue-600 text-white text-[8px] px-2 py-0.5 rounded font-bold italic uppercase">${data.type}</span>
-                            </div>
-                            <p class="text-sm italic text-slate-700 leading-snug">"${data.txt}"</p>
-                            <div class="mt-2 text-[8px] font-bold text-blue-800 italic uppercase tracking-tighter">${data.feedback ? '✓ ' + data.feedback : ''}</div>
-                        </div>`;
-                });
-            });
-        }
-
-        window.sendData = async (type, elementId) => {
+        window.sendData = (type, elementId) => {
             const txt = document.getElementById(elementId).value;
             const naam = document.getElementById('uNaam').value;
             const klas = document.getElementById('uKlas').value;
-            if(!txt) return alert("Veld is leeg.");
             const feedback = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value).join(", ");
-            await addDoc(collection(db, "btv_2026"), { naam, klas, type, txt, feedback, ts: serverTimestamp() });
-            alert("Verzonden naar live feed!");
+            push(ref(db, 'btv_2026/' + klas), { naam, type, txt, feedback, ts: Date.now() });
+            document.getElementById(elementId).value = ""; alert("Ingezonden!");
         };
     </script>
 
     <script>
-        // --- DEEL 3: AUTOMATISCHE CORRECTIE LOGICA ---
+        // --- DEEL 3: AUTOMATISCHE CONTROLE ---
         const criteria = [
             ["ik legde", "zijligging"], ["ik zette", "kruising", "af"], ["ik riep", "ambulance"],
             ["ik sprak", "slachtoffer", "aan"], ["ik hield", "verkeer", "afstand"], ["ik plaatste", "motorfiets"],
@@ -134,63 +110,53 @@
             const input = document.getElementById('zinInput').value.toLowerCase();
             let score = 0;
             criteria.forEach((woorden, i) => {
-                const isCorrect = woorden.every(w => input.includes(w));
+                const correct = woorden.every(w => input.includes(w));
                 const dot = document.getElementById(`dot-${i+1}`);
-                if(dot) {
-                    dot.className = isCorrect ? "w-3 h-3 rounded-full bg-green-500 shadow-[0_0_8px_green] transition-all" : "w-3 h-3 rounded-full bg-slate-300";
-                }
-                if(isCorrect) score++;
+                if(dot) dot.className = correct ? "w-3 h-3 rounded-full bg-green-500 shadow-[0_0_8px_green]" : "w-3 h-3 rounded-full bg-slate-300";
+                if(correct) score++;
             });
             document.getElementById('liveScore').innerText = score;
         }
     </script>
-
-    <style>
-        canvas { touch-action: none; cursor: crosshair; }
-        .bg-police { background-color: #002d5e; }
-    </style>
 </head>
-<body class="bg-slate-50 font-sans pb-20">
+<body class="bg-slate-50 pb-20">
 
-    <div id="loginOverlay" class="fixed inset-0 bg-police z-50 flex items-center justify-center p-6">
-        <div class="bg-white p-8 rounded-2xl max-w-sm w-full shadow-2xl border-t-8 border-yellow-500">
-            <h2 class="font-black text-2xl mb-2 uppercase italic text-police tracking-tighter">BTV Dashboard 2026</h2>
-            <p class="text-xs text-slate-400 mb-6 font-bold uppercase">Log in met je voornaam en eenheid.</p>
-            <input type="text" id="uNaam" placeholder="Voornaam" class="w-full border-2 p-4 rounded-xl mb-4 outline-none font-bold">
-            <select id="uKlas" class="w-full border-2 p-4 rounded-xl mb-8 font-bold appearance-none bg-white">
-                <option value="">-- Kies Eenheid --</option>
+    <div id="loginOverlay" class="fixed inset-0 bg-[#002d5e] z-50 flex items-center justify-center p-6">
+        <div class="bg-white p-8 rounded-2xl max-w-sm w-full shadow-2xl border-t-8 border-yellow-500 text-center">
+            <h2 class="font-black text-2xl mb-6 uppercase italic text-blue-900 tracking-tighter">BTV Dashboard 2026</h2>
+            <input type="text" id="uNaam" placeholder="Voornaam" class="w-full border-2 p-4 rounded-xl mb-4 font-bold outline-none">
+            <select id="uKlas" class="w-full border-2 p-4 rounded-xl mb-8 font-bold outline-none">
+                <option value="">-- Eenheid --</option>
                 <option>Delta</option><option>Echo</option><option>Foxtrot</option>
-                <option>Kilo</option><option>Lima</option><option>Mike</option>
             </select>
-            <button onclick="startLes()" class="w-full bg-police text-white p-5 rounded-xl font-black uppercase tracking-widest hover:bg-blue-900 transition-all">Start Sessie</button>
+            <button onclick="startLes()" class="w-full bg-[#002d5e] text-white p-5 rounded-xl font-black uppercase tracking-widest hover:bg-blue-900 transition-all">Start Sessie</button>
         </div>
     </div>
 
     <div id="mainContent" class="hidden max-w-5xl mx-auto p-4 space-y-10">
-        
-        <header class="bg-police text-white p-6 rounded-2xl flex justify-between items-center shadow-xl">
+        <header class="bg-[#002d5e] text-white p-6 rounded-2xl flex justify-between items-center shadow-xl">
             <div class="font-black italic uppercase text-lg">Eenheid: <span id="displayKlas" class="text-yellow-400"></span></div>
-            <div class="flex items-center gap-2"><div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span class="text-[10px] font-bold">LIVE SYNC</span></div>
+            <div class="flex items-center gap-2 text-[10px] font-bold tracking-widest animate-pulse">● LIVE FEEDBACK ACTIEF</div>
         </header>
 
         <div class="grid md:grid-cols-2 gap-8">
-            <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-police">
-                <div class="flex justify-between items-center mb-4"><h3 class="font-black text-xs uppercase italic text-police">Deel 2a: Redenen van Wetenschap</h3><button onclick="clear_c1()" class="text-[9px] text-red-600 font-bold border border-red-100 px-2 py-1 rounded">Gum</button></div>
+            <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-[#002d5e]">
+                <div class="flex justify-between items-center mb-4"><h3 class="font-black text-xs uppercase italic text-blue-900">Deel 2a: Redenen van Wetenschap</h3><button onclick="clear_c1()" class="text-[9px] text-red-600 font-bold border px-2 py-1 rounded">Gum</button></div>
                 <canvas id="c1" class="w-full bg-slate-50 border-2 rounded-xl mb-4"></canvas>
-                <textarea id="t1" class="w-full border-2 p-4 rounded-xl text-xs h-20 outline-none focus:border-police" placeholder="Typ hier de toelichting bij je redenen..."></textarea>
-                <button onclick="sendData('Wetenschap', 't1')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-[10px]">Deel met de klas</button>
+                <textarea id="t1" class="w-full border-2 p-4 rounded-xl text-xs h-20 outline-none focus:border-blue-900" placeholder="Typ hier de toelichting bij je redenen..."></textarea>
+                <button onclick="sendData('Wetenschap', 't1')" class="w-full bg-[#002d5e] text-white py-3 mt-2 rounded-xl font-black uppercase text-[10px]">Deel met de klas</button>
             </div>
-            <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-police">
-                <div class="flex justify-between items-center mb-4"><h3 class="font-black text-xs uppercase italic text-police">Deel 2b: Situatieschets</h3><button onclick="clear_c2()" class="text-[9px] text-red-600 font-bold border border-red-100 px-2 py-1 rounded">Gum</button></div>
+            <div class="bg-white p-6 rounded-2xl shadow-lg border-t-4 border-[#002d5e]">
+                <div class="flex justify-between items-center mb-4"><h3 class="font-black text-xs uppercase italic text-blue-900">Deel 2b: Situatieschets</h3><button onclick="clear_c2()" class="text-[9px] text-red-600 font-bold border px-2 py-1 rounded">Gum</button></div>
                 <canvas id="c2" class="w-full bg-slate-50 border-2 rounded-xl mb-4"></canvas>
-                <textarea id="t2" class="w-full border-2 p-4 rounded-xl text-xs h-20 outline-none focus:border-police" placeholder="Typ hier de toelichting bij je schets..."></textarea>
-                <button onclick="sendData('Schets', 't2')" class="w-full bg-police text-white py-3 mt-2 rounded-xl font-black uppercase text-[10px]">Deel met de klas</button>
+                <textarea id="t2" class="w-full border-2 p-4 rounded-xl text-xs h-20 outline-none focus:border-blue-900" placeholder="Typ hier de toelichting bij je schets..."></textarea>
+                <button onclick="sendData('Schets', 't2')" class="w-full bg-[#002d5e] text-white py-3 mt-2 rounded-xl font-black uppercase text-[10px]">Deel met de klas</button>
             </div>
         </div>
 
-        <section class="bg-white p-8 rounded-2xl shadow-lg border-t-4 border-police">
+        <section class="bg-white p-8 rounded-2xl shadow-lg border-t-4 border-blue-900">
             <div class="flex justify-between items-center mb-6 border-b pb-4">
-                <h2 class="font-black uppercase text-sm text-police italic">Deel 3: Actieve Verleden Tijd (Ik-vorm)</h2>
+                <h2 class="font-black uppercase text-sm text-blue-900 italic">Deel 3: Actieve Verleden Tijd (Ik-vorm)</h2>
                 <div class="bg-green-600 text-white px-5 py-1 rounded-full font-black text-xs shadow-lg">Score: <span id="liveScore">0</span>/15</div>
             </div>
             <div class="grid lg:grid-cols-2 gap-8">
@@ -210,7 +176,7 @@
                             </div>`));
                     </script>
                 </div>
-                <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 border-slate-200 p-6 rounded-2xl text-sm h-[400px] outline-none focus:border-police shadow-inner bg-slate-50/50" placeholder="Zet de zinnen hierboven om naar de ik-vorm (bijv: Ik legde de motorrijder in stabiele zijligging.)"></textarea>
+                <textarea id="zinInput" oninput="checkZinnen()" class="w-full border-2 border-slate-200 p-6 rounded-2xl text-sm h-[400px] outline-none focus:border-blue-900 shadow-inner bg-slate-50/50" placeholder="Zet de zinnen hierboven om naar de ik-vorm (bijv: Ik legde de motorrijder in stabiele zijligging.)"></textarea>
             </div>
         </section>
 
@@ -222,44 +188,31 @@
             </div>
         </section>
 
-        <section class="bg-white p-8 rounded-2xl shadow-lg border-t-4 border-police">
-            <h2 class="font-black uppercase text-sm mb-6 text-police italic underline">Deel 5: Ter Plaatse Situatie</h2>
+        <section class="bg-white p-8 rounded-2xl shadow-lg border-t-4 border-blue-900">
+            <h2 class="font-black uppercase text-sm mb-6 text-blue-900 italic underline">Deel 5: Ter Plaatse Situatie</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="text-center group">
-                    <img src="bord50.png" onerror="this.src='https://via.placeholder.com/400x300?text=bord50.png+mist'" class="w-full h-48 object-cover rounded-xl shadow-md border-2 border-slate-100 mb-2">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Toegestane snelheid</span>
-                </div>
-                <div class="text-center group">
-                    <img src="maps.png" onerror="this.src='https://via.placeholder.com/400x300?text=maps.png+mist'" class="w-full h-48 object-cover rounded-xl shadow-md border-2 border-slate-100 mb-2">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Locatie Maps</span>
-                </div>
-                <div class="text-center group">
-                    <img src="kruispunt.png" onerror="this.src='https://via.placeholder.com/400x300?text=kruispunt.png+mist'" class="w-full h-48 object-cover rounded-xl shadow-md border-2 border-slate-100 mb-2">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Overzicht Kruising</span>
-                </div>
+                <div class="text-center"><img src="bord50.png" onerror="this.src='https://via.placeholder.com/400x300?text=bord50.png'" class="w-full h-48 object-cover rounded-xl shadow border mb-2"><span class="text-[9px] font-black text-slate-400 uppercase">Snelheid</span></div>
+                <div class="text-center"><img src="maps.png" onerror="this.src='https://via.placeholder.com/400x300?text=maps.png'" class="w-full h-48 object-cover rounded-xl shadow border mb-2"><span class="text-[9px] font-black text-slate-400 uppercase">Locatie</span></div>
+                <div class="text-center"><img src="kruispunt.png" onerror="this.src='https://via.placeholder.com/400x300?text=kruispunt.png'" class="w-full h-48 object-cover rounded-xl shadow border mb-2"><span class="text-[9px] font-black text-slate-400 uppercase">Situatie</span></div>
             </div>
         </section>
 
         <section class="bg-slate-900 p-8 rounded-3xl shadow-2xl text-white">
-            <h2 class="font-black uppercase text-sm mb-6 text-yellow-500 italic border-b border-white/10 pb-4">Deel 6: PV van Bevindingen</h2>
+            <h2 class="font-black uppercase text-sm mb-6 text-yellow-500 italic border-b border-white/10 pb-4">Deel 6: PV van Bevindingen & Feedback</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6" id="feedbackChecklist">
-                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10"><input type="checkbox" value="Positie Dienstvoertuig"><span class="text-[11px] font-bold uppercase">Positie dienstvoertuig?</span></label>
-                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10"><input type="checkbox" value="Veiligheidsmaatregelen"><span class="text-[11px] font-bold uppercase">Veiligheidsmaatregelen?</span></label>
-                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10"><input type="checkbox" value="METHANE Terugmelding"><span class="text-[11px] font-bold uppercase">METHANE Terugmelding?</span></label>
-                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10"><input type="checkbox" value="Vaststellen Strafbaar Feit"><span class="text-[11px] font-bold uppercase">Vaststellen Strafbaar feit?</span></label>
+                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer"><input type="checkbox" value="Positie Dienstvoertuig"><span class="text-[11px] font-bold uppercase">Positie dienstvoertuig?</span></label>
+                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer"><input type="checkbox" value="Veiligheidsmaatregelen"><span class="text-[11px] font-bold uppercase">Veiligheidsmaatregelen?</span></label>
+                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer"><input type="checkbox" value="METHANE"><span class="text-[11px] font-bold uppercase">METHANE Terugmelding?</span></label>
+                <label class="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 cursor-pointer"><input type="checkbox" value="Strafbaar feit"><span class="text-[11px] font-bold uppercase">Strafbaar feit?</span></label>
             </div>
-            <textarea id="pvInput" class="w-full bg-white/10 border-2 border-white/10 p-6 rounded-2xl text-sm h-64 outline-none focus:border-yellow-500 transition-all" placeholder="Stel hier je PV van bevindingen op..."></textarea>
+            <textarea id="pvInput" class="w-full bg-white/10 border-2 border-white/10 p-6 rounded-2xl text-sm h-64 outline-none focus:border-yellow-500" placeholder="Stel hier je PV op..."></textarea>
             <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-yellow-500 text-slate-900 py-5 mt-6 rounded-2xl font-black uppercase tracking-widest shadow-xl hover:bg-yellow-400">Verstuur naar Livefeed</button>
         </section>
 
         <section class="pt-10">
-            <div class="flex items-center gap-6 mb-8">
-                <h2 class="font-black uppercase text-xl text-police italic tracking-tighter shrink-0">Live Eenheidsfeed</h2>
-                <div class="h-px bg-slate-200 w-full"></div>
-            </div>
+            <h2 class="font-black uppercase text-xl text-blue-900 italic mb-8 tracking-tighter shrink-0">Live Eenheidsfeed</h2>
             <div id="liveFeed"></div>
         </section>
     </div>
-
 </body>
 </html>

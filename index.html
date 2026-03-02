@@ -113,12 +113,18 @@
             initLive(klas);
         };
 
-        // ========== LIVE FEED ==========
+        // ========== LIVE FEED - REALTIME VOOR ALLE DEELNEMERS ==========
         async function initLive(klas) {
             const q = query(collection(db, "btv_2026"), where("klas", "==", klas), orderBy("ts", "desc"));
             onSnapshot(q, (sn) => {
                 const feed = document.getElementById('liveFeed');
-                feed.innerHTML = "";
+                feed.innerHTML = ""; // leegmaken voor update
+                
+                // Toon duidelijk dat er live wordt geladen
+                if (sn.empty) {
+                    feed.innerHTML = '<div class="text-center p-8 bg-slate-100 rounded-2xl italic text-slate-500">Nog geen inzendingen in deze eenheid. Jouw bijdrage verschijnt hier direct.</div>';
+                    return;
+                }
                 
                 const grid = document.createElement('div');
                 grid.className = "grid grid-cols-1 md:grid-cols-2 gap-4";
@@ -127,10 +133,16 @@
                     const data = d.data();
                     const feedbackTags = data.feedback ? data.feedback.split(', ') : [];
                     
+                    // Datum/tijd optioneel tonen voor extra realtime gevoel
+                    const tijd = data.ts ? new Date(data.ts.seconds * 1000).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'zojuist';
+                    
                     const card = `
-                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
                             <div class="bg-slate-100 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
-                                <span class="font-black text-blue-900 text-[11px] uppercase tracking-tighter">${data.naam}</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-black text-blue-900 text-[11px] uppercase tracking-tighter">${data.naam}</span>
+                                    <span class="text-[8px] text-slate-500 font-mono">${tijd}</span>
+                                </div>
                                 <span class="bg-blue-900 text-white text-[9px] px-2 py-0.5 rounded-full font-bold uppercase">${data.type}</span>
                             </div>
                             <div class="p-4 flex-grow">
@@ -147,6 +159,9 @@
                     grid.innerHTML += card;
                 });
                 feed.appendChild(grid);
+            }, (error) => {
+                console.error("Livefeed error:", error);
+                document.getElementById('liveFeed').innerHTML = '<div class="text-red-600 p-4">Fout bij laden livefeed. Controleer verbinding.</div>';
             });
         }
 
@@ -164,7 +179,8 @@
                 naam, klas, type, txt, ts: serverTimestamp(),
                 feedback: feedbackString
             });
-            alert(type + " is succesvol verzonden!");
+            // Alert optioneel, maar kan uit om ervaring soepeler te maken
+            // alert(type + " is succesvol verzonden!"); // (optioneel uitgezet voor snellere flow)
         };
 
         // ========== SPECIALE FUNCTIE VOOR DE IK-VORM ZINNEN ==========
@@ -174,7 +190,6 @@
             const klas = document.getElementById('uKlas').value;
             if(!txt) return alert("Vul eerst je actieve ik-zinnen in.");
             
-            // feedback wordt niet standaard meegestuurd tenzij aangevinkt, maar we kunnen optioneel de checklist meesturen
             const gekozen = Array.from(document.querySelectorAll('#feedbackChecklist input:checked')).map(c => c.value);
             const feedbackString = gekozen.join(", ");
             
@@ -182,7 +197,7 @@
                 naam, klas, type: "Actieve ik-zinnen", txt, ts: serverTimestamp(),
                 feedback: feedbackString
             });
-            alert("Je ik-zinnen zijn verstuurd naar de livefeed!");
+            // alert("Je ik-zinnen zijn verstuurd naar de livefeed!"); // optioneel
         };
 
         window.resetAlles = () => {
@@ -195,7 +210,7 @@
         };
     </script>
 
-    <!-- Oefenblok en checkZinnen (volledig intact, plus extra knop voor verzenden) -->
+    <!-- Oefenblok en checkZinnen (volledig intact) -->
     <script>
         const criteria = [
             ["ik legde", "zijligging"], ["ik zette", "kruising", "af"], ["ik riep", "ambulance"],
@@ -221,6 +236,12 @@
     <style>
         .bg-police { background-color: #002d5e; }
         .shadow-police { box-shadow: 0 4px 15px rgba(0, 45, 94, 0.2); }
+        /* Animatie voor nieuwe items (optioneel) */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        #liveFeed > div > div { animation: fadeIn 0.3s ease-out; }
     </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-900 pb-20 p-4">
@@ -268,7 +289,7 @@
             </div>
         </section>
 
-        <!-- Deel 3: Actieve Verleden Tijd (oefening + verzendknop hersteld) -->
+        <!-- Deel 3: Actieve Verleden Tijd (oefening + verzendknop) -->
         <section class="bg-white p-6 rounded-2xl shadow-police border-t-4 border-police">
             <div class="flex justify-between items-center mb-6 border-b pb-4">
                 <h2 class="font-black uppercase text-sm text-police italic underline">Deel 3: Actieve Verleden Tijd (ik-vorm)</h2>
@@ -335,7 +356,7 @@
             <button onclick="sendData('PV Bevindingen', 'pvInput')" class="w-full bg-police text-white py-4 mt-4 rounded-xl font-black uppercase text-xs shadow-md italic">Verstuur PV naar Livefeed</button>
         </section>
 
-        <!-- Deel 8: Feedback Checklist (blijft zoals het was) -->
+        <!-- Deel 8: Feedback Checklist -->
         <section class="bg-slate-100 p-6 rounded-2xl border-2 border-slate-300 shadow-inner">
             <h2 class="font-black uppercase text-sm mb-6 text-slate-700 italic border-b pb-2 text-center">Deel 8: Feedback Checklist</h2>
             <p class="text-[10px] text-slate-500 mb-4 uppercase text-center font-bold italic">Vink aan wat je hebt behandeld in je DAA of PV</p>
@@ -349,14 +370,21 @@
             </div>
         </section>
 
-        <!-- Live Feed -->
+        <!-- LIVE FEED - nu met realtime updates en betere zichtbaarheid -->
         <section class="mt-10">
             <div class="flex items-center gap-4 mb-6">
                 <div class="h-px bg-slate-300 flex-1"></div>
-                <h2 class="font-black uppercase text-[12px] text-blue-900 tracking-widest italic">Live Feed Eenheidspagina</h2>
+                <div class="flex items-center gap-2">
+                    <span class="relative flex h-3 w-3">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                    <h2 class="font-black uppercase text-[12px] text-blue-900 tracking-widest italic">Live Feed Eenheidspagina</h2>
+                </div>
                 <div class="h-px bg-slate-300 flex-1"></div>
             </div>
             <div id="liveFeed" class="min-h-[200px]"></div>
+            <p class="text-[10px] text-slate-400 text-center mt-2 italic">Nieuwe inzendingen verschijnen direct</p>
         </section>
     </div>
 </body>
